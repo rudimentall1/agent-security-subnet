@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 
 from subnet.protocol import (
     SecurityTask,
@@ -12,6 +12,12 @@ from subnet.stateful_miner import (
     StateConfusionMiner,
     StatefulMiner,
     ToolEscalationMiner,
+)
+from subnet.adaptive_miner import (
+    AdaptiveStateMiner,
+)
+from subnet.observation_miner import (
+    ObservationDrivenMiner,
 )
 from subnet.stateful_target import (
     StatefulAgent,
@@ -132,6 +138,8 @@ MINER_FACTORIES = (
     ("state", StateConfusionMiner),
     ("shallow", ShallowMiner),
     ("broad", BroadStateMiner),
+    ("adaptive", AdaptiveStateMiner),
+    ("observation", ObservationDrivenMiner),
 )
 
 
@@ -586,3 +594,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

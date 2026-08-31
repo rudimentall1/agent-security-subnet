@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 
 from subnet.protocol import (
     build_task,
@@ -272,3 +272,4 @@ class TestStatefulBenchmark(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
