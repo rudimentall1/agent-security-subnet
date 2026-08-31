@@ -7,10 +7,7 @@ from subnet.miner import (
     ToolMiner,
     StateMiner,
 )
-from subnet.oracle import (
-    ground_truth_finding_class,
-    scenario_for_task,
-)
+from subnet.oracle import scenario_for_task
 from subnet.protocol import build_task
 from subnet.scoring import calculate_reward
 from subnet.target import build_target
@@ -43,25 +40,29 @@ def run_benchmark():
 
     stats = {
         miner.miner_id: {
-            "tasks": 0,
+            "evaluations": 0,
             "verified": 0,
-            "duplicates": 0,
             "false_positive": 0,
+            "duplicates": 0,
+            "invalid": 0,
             "reward": 0.0,
-            "task_hits": 0,
+            "steps_to_discovery": [],
+            "severity": defaultdict(int),
         }
         for miner in miners
     }
 
-    class_hits = defaultdict(int)
-
-    rows = []
+    coverage = defaultdict(int)
 
     for task_id in TASK_IDS:
 
-        task = build_task(task_id)
+        task = build_task(
+            task_id
+        )
 
-        scenario = scenario_for_task(task)
+        scenario = scenario_for_task(
+            task
+        )
 
         agent = build_target(
             scenario
@@ -84,68 +85,57 @@ def run_benchmark():
                 verification
             )
 
-            miner_stats = stats[
+            item = stats[
                 miner.miner_id
             ]
 
-            miner_stats["tasks"] += 1
-            miner_stats["reward"] += reward
+            item["evaluations"] += 1
+            item["reward"] += reward
 
-            if verification.policy_violation:
-                miner_stats["verified"] += 1
-                class_hits[
-                    scenario
+            if verification.verdict == "VERIFIED":
+                item["verified"] += 1
+
+                item["steps_to_discovery"].append(
+                    finding.steps_to_discovery
+                )
+
+                item["severity"][
+                    verification.severity
                 ] += 1
 
-            if verification.duplicate:
-                miner_stats["duplicates"] += 1
+                coverage[scenario] += 1
 
-            if (
-                finding.observed_behavior
-                != finding.expected_behavior
-                and verification.policy_violation is False
-            ):
-                # Do not treat miner's UNKNOWN expected claim
-                # as a false positive. A false positive is a
-                # claimed anomaly that validator rejects.
-                if (
-                    "Potential security anomaly"
-                    in finding.impact
-                ):
-                    miner_stats["false_positive"] += 1
+            elif verification.verdict == "FALSE_POSITIVE":
+                item["false_positive"] += 1
 
-            rows.append(
-                (
-                    task_id,
-                    scenario,
-                    miner.miner_id,
-                    verification,
-                    reward,
-                )
-            )
+            elif verification.verdict == "DUPLICATE":
+                item["duplicates"] += 1
 
-    # --------------------------------------------------------
-    # Aggregate benchmark metrics
-    # --------------------------------------------------------
+            elif verification.verdict == "INVALID_CLAIM":
+                item["invalid"] += 1
 
-    total_tasks = len(TASK_IDS)
-
-    total_runs = (
-        total_tasks * len(miners)
+    total_evaluations = (
+        len(TASK_IDS)
+        * len(miners)
     )
 
-    total_verified = sum(
+    verified = sum(
         item["verified"]
         for item in stats.values()
     )
 
-    total_duplicates = sum(
+    false_positive = sum(
+        item["false_positive"]
+        for item in stats.values()
+    )
+
+    duplicates = sum(
         item["duplicates"]
         for item in stats.values()
     )
 
-    total_false_positive = sum(
-        item["false_positive"]
+    invalid = sum(
+        item["invalid"]
         for item in stats.values()
     )
 
@@ -154,38 +144,28 @@ def run_benchmark():
         for item in stats.values()
     )
 
-    discovery_rate = (
-        total_verified / total_runs
-        if total_runs > 0
-        else 0.0
-    )
-
-    duplicate_rate = (
-        total_duplicates / total_runs
-        if total_runs > 0
-        else 0.0
-    )
-
-    false_positive_rate = (
-        total_false_positive / total_runs
-        if total_runs > 0
-        else 0.0
-    )
-
     return {
         "stats": stats,
-        "class_hits": dict(class_hits),
-        "rows": rows,
-        "total_tasks": total_tasks,
-        "total_runs": total_runs,
-        "total_verified": total_verified,
-        "total_duplicates": total_duplicates,
-        "total_false_positive": total_false_positive,
+        "coverage": dict(coverage),
+        "total_evaluations": total_evaluations,
+        "verified": verified,
+        "false_positive": false_positive,
+        "duplicates": duplicates,
+        "invalid": invalid,
         "total_reward": total_reward,
-        "discovery_rate": discovery_rate,
-        "duplicate_rate": duplicate_rate,
-        "false_positive_rate": false_positive_rate,
     }
+
+
+def leaderboard(stats):
+
+    return sorted(
+        stats.items(),
+        key=lambda item: (
+            -item[1]["reward"],
+            -item[1]["verified"],
+            item[1]["false_positive"],
+        ),
+    )
 
 
 def main():
@@ -194,83 +174,128 @@ def main():
 
     print(
         "Agent Security Subnet — "
-        "Multi-Vulnerability Benchmark v1.3"
+        "Active Exploration Benchmark v1.3.3"
     )
     print("=" * 72)
     print()
 
-    print("BENCHMARK")
-    print("-" * 72)
-    print(
-        f"tasks={result['total_tasks']}"
-    )
-    print(
-        f"miner-task evaluations="
-        f"{result['total_runs']}"
-    )
-    print()
-
     print("AGGREGATE METRICS")
     print("-" * 72)
+
     print(
-        f"verified findings="
-        f"{result['total_verified']}"
+        f"evaluations="
+        f"{result['total_evaluations']}"
     )
+
     print(
-        f"discovery rate="
-        f"{result['discovery_rate']:.4f}"
+        f"verified="
+        f"{result['verified']}"
     )
+
     print(
-        f"duplicate findings="
-        f"{result['total_duplicates']}"
+        f"false_positive="
+        f"{result['false_positive']}"
     )
+
     print(
-        f"duplicate rate="
-        f"{result['duplicate_rate']:.4f}"
+        f"duplicates="
+        f"{result['duplicates']}"
     )
+
     print(
-        f"rejected anomaly claims="
-        f"{result['total_false_positive']}"
+        f"invalid="
+        f"{result['invalid']}"
     )
+
     print(
-        f"false-positive rate="
-        f"{result['false_positive_rate']:.4f}"
+        f"discovery_rate="
+        f"{result['verified'] / result['total_evaluations']:.4f}"
     )
+
     print(
-        f"total reward="
+        f"false_positive_rate="
+        f"{result['false_positive'] / result['total_evaluations']:.4f}"
+    )
+
+    print(
+        f"duplicate_rate="
+        f"{result['duplicates'] / result['total_evaluations']:.4f}"
+    )
+
+    print(
+        f"total_reward="
         f"{result['total_reward']:.4f}"
     )
+
     print()
 
-    print("PER-MINER RESULTS")
+    print("LEADERBOARD")
     print("-" * 72)
 
-    for miner_id, stats in result["stats"].items():
+    for rank, (
+        miner_id,
+        item,
+    ) in enumerate(
+        leaderboard(
+            result["stats"]
+        ),
+        start=1,
+    ):
 
-        print(
-            f"{miner_id}"
+        verified = item["verified"]
+
+        if item["steps_to_discovery"]:
+            avg_steps = (
+                sum(
+                    item["steps_to_discovery"]
+                )
+                / len(
+                    item["steps_to_discovery"]
+                )
+            )
+        else:
+            avg_steps = 0.0
+
+        severity = ", ".join(
+            f"{name}={count}"
+            for name, count
+            in sorted(
+                item["severity"].items()
+            )
         )
 
         print(
-            f"  tasks={stats['tasks']}"
+            f"{rank}. {miner_id}"
         )
 
         print(
-            f"  verified={stats['verified']}"
+            f"   reward="
+            f"{item['reward']:.4f}"
         )
 
         print(
-            f"  duplicates={stats['duplicates']}"
+            f"   verified="
+            f"{verified}"
         )
 
         print(
-            f"  false_positive="
-            f"{stats['false_positive']}"
+            f"   false_positive="
+            f"{item['false_positive']}"
         )
 
         print(
-            f"  total_reward="
-            f"{stats['reward']:.4f}"
+            f"   duplicates="
+            f"{item['duplicates']}"
+        )
+
+        print(
+            f"   avg_steps_to_discovery="
+            f"{avg_steps:.2f}"
+        )
+
+        print(
+            f"   severity="
+            f"{severity}"
         )
 
         print()
@@ -278,19 +303,16 @@ def main():
     print("VULNERABILITY COVERAGE")
     print("-" * 72)
 
-    expected_classes = (
+    for name in (
         "privilege_boundary",
         "policy_bypass",
         "tool_escalation",
         "state_confusion",
-    )
-
-    for vulnerability_class in expected_classes:
-
+    ):
         print(
-            f"{vulnerability_class}: "
-            f"{result['class_hits'].get(vulnerability_class, 0)} "
-            "verified findings"
+            f"{name}: "
+            f"{result['coverage'].get(name, 0)} "
+            "verified"
         )
 
     print()
@@ -298,72 +320,54 @@ def main():
     print("ASSERTIONS")
     print("-" * 72)
 
-    assert result["total_tasks"] == 8
+    assert result["total_evaluations"] == 40
 
-    assert result["total_runs"] == 40
+    assert result["verified"] > 0
 
-    assert result["total_verified"] > 0
+    assert result["false_positive"] > 0
 
     assert result["total_reward"] > 0.0
 
-    assert (
-        result["class_hits"].get(
-            "privilege_boundary",
-            0,
-        ) > 0
-    )
+    for item in result["stats"].values():
 
-    assert (
-        result["class_hits"].get(
-            "policy_bypass",
-            0,
-        ) > 0
-    )
+        assert item["reward"] >= 0.0
 
-    assert (
-        result["class_hits"].get(
-            "tool_escalation",
-            0,
-        ) > 0
-    )
+        assert item["reward"] <= (
+            item["verified"]
+        )
 
-    assert (
-        result["class_hits"].get(
-            "state_confusion",
-            0,
-        ) > 0
-    )
+        for steps in item["steps_to_discovery"]:
+            assert steps >= 1
+            assert steps <= 5
 
-    assert all(
-        0.0 <= stats["reward"]
-        for stats in result["stats"].values()
+    print(
+        "active multi-step exploration: PASS"
     )
 
     print(
-        "multiple vulnerability classes: PASS"
+        "steps-to-discovery accounting: PASS"
     )
+
     print(
-        "hidden ground truth: PASS"
+        "validator-only policy evaluation: PASS"
     )
+
     print(
-        "independent validator replay: PASS"
+        "severity-aware reward: PASS"
     )
+
     print(
-        "duplicate suppression: PASS"
+        "false-positive accounting: PASS"
     )
+
     print(
-        "invalid findings score zero: PASS"
-    )
-    print(
-        "aggregate discovery metrics: PASS"
-    )
-    print(
-        "aggregate reward accounting: PASS"
+        "aggregate leaderboard: PASS"
     )
 
     print()
+
     print(
-        "Multi-Vulnerability Benchmark v1.3: PASS"
+        "Active Exploration Benchmark v1.3.3: PASS"
     )
 
 

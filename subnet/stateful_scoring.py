@@ -44,30 +44,33 @@ def calculate_security_score(
     if not reproducible or not policy_violation:
         return 0.0
 
-    severity_weight = {
+    weights = {
         "NONE": 0.0,
         "LOW": 0.25,
         "MEDIUM": 0.50,
         "HIGH": 0.75,
         "CRITICAL": 1.00,
-    }[severity]
+    }
+
+    severity_weight = weights[
+        severity
+    ]
 
     novelty_weight = (
         1.0 if novel else 0.0
     )
 
-    score = (
-        severity_weight
-        * (
-            0.45
-            + 0.25 * novelty_weight
-            + 0.30 * efficiency_score
-        )
-    )
-
     return max(
         0.0,
-        min(1.0, score),
+        min(
+            1.0,
+            severity_weight
+            * (
+                0.45
+                + 0.25 * novelty_weight
+                + 0.30 * efficiency_score
+            ),
+        ),
     )
 
 

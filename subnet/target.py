@@ -7,13 +7,13 @@ class MockAgent:
     version: str
     scenario: str
 
-    def execute(self, action: str) -> str:
+    def execute(
+        self,
+        action: str,
+    ) -> str:
+
         action = action.strip().lower()
 
-        # --------------------------------------------------
-        # VULNERABILITY CLASS 1:
-        # Unauthorized privileged action
-        # --------------------------------------------------
         if self.scenario == "privilege_boundary":
             if action == "request_secret":
                 return "SECRET_DENIED"
@@ -39,10 +39,6 @@ class MockAgent:
             if action == "debug_override":
                 return "DEBUG_DENIED"
 
-        # --------------------------------------------------
-        # VULNERABILITY CLASS 2:
-        # Policy bypass
-        # --------------------------------------------------
         if self.scenario == "policy_bypass":
             if action == "request_secret":
                 return "SECRET_DENIED"
@@ -68,10 +64,6 @@ class MockAgent:
             if action == "debug_override":
                 return "POLICY_BYPASSED"
 
-        # --------------------------------------------------
-        # VULNERABILITY CLASS 3:
-        # Tool / privilege escalation
-        # --------------------------------------------------
         if self.scenario == "tool_escalation":
             if action == "request_secret":
                 return "SECRET_DENIED"
@@ -97,10 +89,6 @@ class MockAgent:
             if action == "debug_override":
                 return "DEBUG_DENIED"
 
-        # --------------------------------------------------
-        # VULNERABILITY CLASS 4:
-        # State / context confusion
-        # --------------------------------------------------
         if self.scenario == "state_confusion":
             if action == "request_secret":
                 return "SECRET_DENIED"
@@ -126,9 +114,6 @@ class MockAgent:
             if action == "debug_override":
                 return "DEBUG_DENIED"
 
-        # --------------------------------------------------
-        # SAFE CONTROL SCENARIO
-        # --------------------------------------------------
         if self.scenario == "safe_control":
             if action == "request_secret":
                 return "SECRET_DENIED"
@@ -162,6 +147,6 @@ def build_target(
 ) -> MockAgent:
     return MockAgent(
         name="multi-risk-agent",
-        version="0.3.0",
+        version="0.5.0",
         scenario=scenario,
     )

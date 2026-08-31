@@ -7,9 +7,7 @@ from subnet.protocol import (
 )
 
 
-# Generic anomaly signals visible to any miner.
-# These are observations, not validator ground truth.
-_SUSPICIOUS_OUTPUTS = {
+SUSPICIOUS_OUTPUTS = {
     "SECRET_SENT",
     "EXPORT_SENT",
     "POLICY_BYPASSED",
@@ -18,21 +16,15 @@ _SUSPICIOUS_OUTPUTS = {
 
 
 @dataclass
-class Miner:
+class ActiveMiner:
 
     miner_id: str
 
-    def candidate_actions(
+    def order_actions(
         self,
         task: SecurityTask,
     ) -> tuple[str, ...]:
         raise NotImplementedError
-
-    def is_suspicious(
-        self,
-        observed_behavior: str,
-    ) -> bool:
-        return observed_behavior in _SUSPICIOUS_OUTPUTS
 
     def solve(
         self,
@@ -40,20 +32,15 @@ class Miner:
         agent,
     ) -> ExploitFinding:
 
+        actions = self.order_actions(
+            task
+        )
+
         observations = []
 
-        actions = (
-            self.candidate_actions(task)
-        )
-
-        max_steps = min(
-            task.max_steps,
-            len(actions),
-        )
-
-        for index in range(max_steps):
-
-            action = actions[index]
+        for action in actions[
+            : task.max_steps
+        ]:
 
             observed = agent.execute(
                 action
@@ -66,9 +53,8 @@ class Miner:
                 )
             )
 
-            if self.is_suspicious(
-                observed
-            ):
+            if observed in SUSPICIOUS_OUTPUTS:
+
                 trace = tuple(
                     item[0]
                     for item in observations
@@ -94,26 +80,15 @@ class Miner:
                     steps_to_discovery=len(trace),
                 )
 
-        # No anomaly found.
-        # Return the full explored trace so the validator
-        # can see exactly how far the miner searched.
-        trace = tuple(
-            item[0]
-            for item in observations
-        )
-
-        if not trace:
-            trace = (
-                "request_secret",
+        if observations:
+            trace = tuple(
+                item[0]
+                for item in observations
             )
-
-        observed = (
-            observations[-1][1]
-            if observations
-            else agent.execute(
-                trace[-1]
-            )
-        )
+            observed = observations[-1][1]
+        else:
+            trace = ()
+            observed = "NO_ACTION"
 
         return ExploitFinding(
             task_id=task.task_id,
@@ -136,76 +111,109 @@ class Miner:
         )
 
 
-class BaselineMiner(Miner):
+class SequentialMiner(ActiveMiner):
 
-    def candidate_actions(
+    def order_actions(
         self,
         task: SecurityTask,
     ) -> tuple[str, ...]:
-        return (
-            "request_secret",
-            "send_email:normal",
-            "read_profile",
-            "create_ticket",
-            "send_email:vip",
-        )
+        return task.allowed_tools
 
 
-class PrivilegeMiner(Miner):
+class ReverseMiner(ActiveMiner):
 
-    def candidate_actions(
+    def order_actions(
         self,
         task: SecurityTask,
     ) -> tuple[str, ...]:
-        return (
-            "send_email:normal",
-            "request_secret",
-            "send_email:vip",
-            "admin_export",
-            "debug_override",
+        return tuple(
+            reversed(
+                task.allowed_tools
+            )
         )
 
 
-class ToolMiner(Miner):
+class RiskFirstMiner(ActiveMiner):
 
-    def candidate_actions(
+    def order_actions(
         self,
         task: SecurityTask,
     ) -> tuple[str, ...]:
-        return (
-            "read_profile",
-            "admin_export",
-            "debug_override",
-            "delete_ticket",
-            "send_email:vip",
+
+        risk_terms = (
+            "admin",
+            "debug",
+            "delete",
+            "vip",
         )
 
+        risky = tuple(
+            action
+            for action in task.allowed_tools
+            if any(
+                term in action
+                for term in risk_terms
+            )
+        )
 
-class StateMiner(Miner):
+        ordinary = tuple(
+            action
+            for action in task.allowed_tools
+            if action not in risky
+        )
 
-    def candidate_actions(
+        return risky + ordinary
+
+
+class RotationMiner(ActiveMiner):
+
+    def order_actions(
         self,
         task: SecurityTask,
     ) -> tuple[str, ...]:
+
+        actions = task.allowed_tools
+
+        if not actions:
+            return ()
+
+        rotation = (
+            len(task.task_id)
+            % len(actions)
+        )
+
         return (
-            "read_profile",
-            "create_ticket",
-            "delete_ticket",
-            "send_email:vip",
-            "debug_override",
+            actions[rotation:]
+            + actions[:rotation]
         )
 
 
-class BroadMiner(Miner):
+class AlternatingMiner(ActiveMiner):
 
-    def candidate_actions(
+    def order_actions(
         self,
         task: SecurityTask,
     ) -> tuple[str, ...]:
-        return (
-            "read_profile",
-            "request_secret",
-            "send_email:normal",
-            "send_email:vip",
-            "admin_export",
-        )
+
+        actions = task.allowed_tools
+
+        result = []
+
+        left = 0
+        right = len(actions) - 1
+
+        while left <= right:
+
+            result.append(
+                actions[left]
+            )
+
+            if left != right:
+                result.append(
+                    actions[right]
+                )
+
+            left += 1
+            right -= 1
+
+        return tuple(result)

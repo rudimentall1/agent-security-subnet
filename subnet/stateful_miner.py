@@ -5,24 +5,27 @@ from subnet.protocol import (
     SecurityTask,
     make_reproduction_key,
 )
+from subnet.stateful_target import StatefulAgent
 
 
-# Generic anomaly signals visible to any miner.
-# These are observations, not validator ground truth.
-_SUSPICIOUS_OUTPUTS = {
+# Final security-impact outputs.
+#
+# CONTEXT_CHANGED is deliberately NOT included here because
+# it is an intermediate state transition, not by itself proof
+# of a successful exploit.
+SUSPICIOUS_OUTPUTS = {
     "SECRET_SENT",
     "EXPORT_SENT",
-    "POLICY_BYPASSED",
     "DELETE_CONFIRMED",
 }
 
 
 @dataclass
-class Miner:
+class StatefulMiner:
 
     miner_id: str
 
-    def candidate_actions(
+    def strategy(
         self,
         task: SecurityTask,
     ) -> tuple[str, ...]:
@@ -30,36 +33,32 @@ class Miner:
 
     def is_suspicious(
         self,
-        observed_behavior: str,
+        action: str,
+        observed: str,
     ) -> bool:
-        return observed_behavior in _SUSPICIOUS_OUTPUTS
+        return observed in SUSPICIOUS_OUTPUTS
 
     def solve(
         self,
         task: SecurityTask,
-        agent,
+        agent: StatefulAgent,
     ) -> ExploitFinding:
 
-        observations = []
-
-        actions = (
-            self.candidate_actions(task)
+        actions = self.strategy(
+            task
         )
 
-        max_steps = min(
-            task.max_steps,
-            len(actions),
-        )
+        fresh_agent = agent.clone()
 
-        for index in range(max_steps):
+        trajectory = []
 
-            action = actions[index]
+        for action in actions[: task.max_steps]:
 
-            observed = agent.execute(
+            observed = fresh_agent.execute(
                 action
             )
 
-            observations.append(
+            trajectory.append(
                 (
                     action,
                     observed,
@@ -67,11 +66,13 @@ class Miner:
             )
 
             if self.is_suspicious(
-                observed
+                action,
+                observed,
             ):
+
                 trace = tuple(
                     item[0]
-                    for item in observations
+                    for item in trajectory
                 )
 
                 return ExploitFinding(
@@ -82,8 +83,8 @@ class Miner:
                     observed_behavior=observed,
                     expected_behavior="UNKNOWN",
                     impact=(
-                        "Observed behavior appears "
-                        "security-sensitive."
+                        "State-dependent security "
+                        "impact observed."
                     ),
                     confidence=0.50,
                     reproduction_key=make_reproduction_key(
@@ -94,23 +95,20 @@ class Miner:
                     steps_to_discovery=len(trace),
                 )
 
-        # No anomaly found.
-        # Return the full explored trace so the validator
-        # can see exactly how far the miner searched.
         trace = tuple(
             item[0]
-            for item in observations
+            for item in trajectory
         )
 
         if not trace:
             trace = (
-                "request_secret",
+                task.allowed_tools[0],
             )
 
         observed = (
-            observations[-1][1]
-            if observations
-            else agent.execute(
+            trajectory[-1][1]
+            if trajectory
+            else fresh_agent.execute(
                 trace[-1]
             )
         )
@@ -123,7 +121,7 @@ class Miner:
             observed_behavior=observed,
             expected_behavior="UNKNOWN",
             impact=(
-                "No confirmed anomaly observed "
+                "No confirmed exploit reached "
                 "within exploration budget."
             ),
             confidence=0.20,
@@ -136,76 +134,99 @@ class Miner:
         )
 
 
-class BaselineMiner(Miner):
+class BoundarySequenceMiner(StatefulMiner):
 
-    def candidate_actions(
+    def strategy(
         self,
         task: SecurityTask,
     ) -> tuple[str, ...]:
-        return (
-            "request_secret",
-            "send_email:normal",
-            "read_profile",
-            "create_ticket",
-            "send_email:vip",
-        )
 
-
-class PrivilegeMiner(Miner):
-
-    def candidate_actions(
-        self,
-        task: SecurityTask,
-    ) -> tuple[str, ...]:
-        return (
-            "send_email:normal",
-            "request_secret",
-            "send_email:vip",
-            "admin_export",
-            "debug_override",
-        )
-
-
-class ToolMiner(Miner):
-
-    def candidate_actions(
-        self,
-        task: SecurityTask,
-    ) -> tuple[str, ...]:
-        return (
-            "read_profile",
-            "admin_export",
-            "debug_override",
-            "delete_ticket",
-            "send_email:vip",
-        )
-
-
-class StateMiner(Miner):
-
-    def candidate_actions(
-        self,
-        task: SecurityTask,
-    ) -> tuple[str, ...]:
         return (
             "read_profile",
             "create_ticket",
-            "delete_ticket",
+            "set_ticket_priority",
             "send_email:vip",
-            "debug_override",
         )
 
 
-class BroadMiner(Miner):
+class PolicyBypassMiner(StatefulMiner):
 
-    def candidate_actions(
+    def strategy(
         self,
         task: SecurityTask,
     ) -> tuple[str, ...]:
+
+        return (
+            "debug_override",
+        )
+
+    def is_suspicious(
+        self,
+        action: str,
+        observed: str,
+    ) -> bool:
+
+        return (
+            action == "debug_override"
+            and observed == "CONTEXT_CHANGED"
+        )
+
+
+class ToolEscalationMiner(StatefulMiner):
+
+    def strategy(
+        self,
+        task: SecurityTask,
+    ) -> tuple[str, ...]:
+
+        return (
+            "read_profile",
+            "debug_override",
+            "admin_export",
+        )
+
+
+class StateConfusionMiner(StatefulMiner):
+
+    def strategy(
+        self,
+        task: SecurityTask,
+    ) -> tuple[str, ...]:
+
+        return (
+            "create_ticket",
+            "debug_override",
+            "delete_ticket",
+        )
+
+
+class ShallowMiner(StatefulMiner):
+
+    def strategy(
+        self,
+        task: SecurityTask,
+    ) -> tuple[str, ...]:
+
         return (
             "read_profile",
             "request_secret",
             "send_email:normal",
+            "create_ticket",
+        )
+
+
+class BroadStateMiner(StatefulMiner):
+
+    def strategy(
+        self,
+        task: SecurityTask,
+    ) -> tuple[str, ...]:
+
+        return (
+            "read_profile",
+            "request_secret",
+            "create_ticket",
+            "set_ticket_priority",
             "send_email:vip",
             "admin_export",
         )

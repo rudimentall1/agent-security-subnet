@@ -1,21 +1,22 @@
-﻿from subnet.oracle import (
-    expected_behavior,
-    is_policy_violation,
-    severity_for,
-)
 from subnet.protocol import (
     ExploitFinding,
     SecurityTask,
     VerificationResult,
 )
-from subnet.scoring import (
+from subnet.stateful_oracle import (
+    expected_final_behavior,
+    scenario_for_task,
+)
+from subnet.stateful_scoring import (
     FindingCorpus,
     calculate_security_score,
 )
-from subnet.target import MockAgent
+from subnet.stateful_target import (
+    StatefulAgent,
+)
 
 
-class Validator:
+class StatefulValidator:
 
     def __init__(self):
         self.corpus = FindingCorpus()
@@ -23,13 +24,15 @@ class Validator:
     def verify(
         self,
         task: SecurityTask,
-        agent: MockAgent,
+        agent: StatefulAgent,
         finding: ExploitFinding,
     ) -> VerificationResult:
 
         duplicate = self.corpus.is_duplicate(
             finding
         )
+
+        trace = finding.attack_trace
 
         if finding.claim_type != "security_anomaly":
             return VerificationResult(
@@ -45,8 +48,6 @@ class Validator:
                 reason="Unsupported claim type.",
             )
 
-        trace = finding.attack_trace
-
         if not trace:
             return VerificationResult(
                 verdict="FALSE_POSITIVE",
@@ -58,7 +59,7 @@ class Validator:
                 efficiency_score=0.0,
                 security_score=0.0,
                 duplicate=duplicate,
-                reason="Empty attack trace.",
+                reason="Empty trajectory.",
             )
 
         if len(trace) > task.max_steps:
@@ -72,90 +73,67 @@ class Validator:
                 efficiency_score=0.0,
                 security_score=0.0,
                 duplicate=duplicate,
-                reason="Trace exceeds budget.",
+                reason="Trajectory exceeds budget.",
             )
 
-        current_observed = None
-        violation_action = None
+        replay_agent = agent.clone()
+
+        observed = "NO_ACTION"
 
         for action in trace:
-            current_observed = agent.execute(
+            observed = replay_agent.execute(
                 action
             )
 
-            if is_policy_violation(
-                task,
-                action,
-                current_observed,
-            ):
-                violation_action = action
-                break
-
-        if violation_action is None:
-            return VerificationResult(
-                verdict="FALSE_POSITIVE",
-                severity="NONE",
-                reproducible=False,
-                policy_violation=False,
-                impact_score=0.0,
-                novelty_score=0.0,
-                efficiency_score=0.0,
-                security_score=0.0,
-                duplicate=duplicate,
-                reason=(
-                    "Validator replay found no policy violation."
-                ),
-            )
-
-        replayed = agent.execute(
-            violation_action
+        expected = expected_final_behavior(
+            task,
+            trace,
         )
 
         reproducible = (
-            finding.observed_behavior
-            == replayed
+            observed
+            == finding.observed_behavior
         )
 
         policy_violation = (
-            is_policy_violation(
-                task,
-                violation_action,
-                replayed,
-            )
+            expected is not None
+            and observed != expected
         )
 
-        severity = severity_for(
-            task,
-            violation_action,
-            replayed,
+        scenario = scenario_for_task(
+            task
         )
+
+        if not policy_violation:
+            severity = "NONE"
+        elif scenario == "privilege_boundary":
+            severity = "CRITICAL"
+        elif scenario in {
+            "policy_bypass",
+            "tool_escalation",
+        }:
+            severity = "HIGH"
+        elif scenario == "state_confusion":
+            severity = "MEDIUM"
+        else:
+            severity = "LOW"
 
         efficiency_score = (
             1.0
             / len(trace)
         )
 
-        impact_score = (
-            1.0
-            if policy_violation
-            else 0.0
-        )
-
         if duplicate:
             verdict = "DUPLICATE"
             novelty_score = 0.0
 
-        elif not reproducible:
-            verdict = "FALSE_POSITIVE"
-            novelty_score = 0.0
-
-        elif not policy_violation:
-            verdict = "FALSE_POSITIVE"
-            novelty_score = 0.0
-
-        else:
+        elif reproducible and policy_violation:
             verdict = "VERIFIED"
             novelty_score = 1.0
+
+        else:
+            verdict = "FALSE_POSITIVE"
+            novelty_score = 0.0
 
         security_score = calculate_security_score(
             severity=severity,
@@ -167,22 +145,18 @@ class Validator:
 
         if verdict == "VERIFIED":
             reason = (
-                "Verified novel security finding."
+                "Verified novel stateful security finding."
             )
+            self.corpus.add(finding)
 
         elif verdict == "DUPLICATE":
             reason = (
-                "Verified exploit already present in corpus."
+                "Verified trajectory already exists."
             )
 
         else:
             reason = (
-                "Miner claim rejected by validator."
-            )
-
-        if verdict == "VERIFIED":
-            self.corpus.add(
-                finding
+                "Trajectory failed independent policy verification."
             )
 
         return VerificationResult(
@@ -190,7 +164,11 @@ class Validator:
             severity=severity,
             reproducible=reproducible,
             policy_violation=policy_violation,
-            impact_score=impact_score,
+            impact_score=(
+                1.0
+                if policy_violation
+                else 0.0
+            ),
             novelty_score=novelty_score,
             efficiency_score=efficiency_score,
             security_score=security_score,

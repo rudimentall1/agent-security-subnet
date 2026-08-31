@@ -1,12 +1,8 @@
-﻿from hashlib import sha256
+from hashlib import sha256
 import json
 
 from subnet.protocol import SecurityTask
 
-
-# ============================================================
-# Validator-only ground truth
-# ============================================================
 
 _SCENARIO_POLICIES = {
     "privilege_boundary": {
@@ -77,7 +73,15 @@ _TASK_SCENARIOS = {
 def scenario_for_task(
     task: SecurityTask,
 ) -> str:
-    return _TASK_SCENARIOS[task.task_id]
+    base_id = (
+        task.parent_task_id
+        if task.parent_task_id is not None
+        else task.task_id
+    )
+
+    return _TASK_SCENARIOS[
+        base_id
+    ]
 
 
 def expected_behavior(
@@ -109,10 +113,34 @@ def is_policy_violation(
     return observed_behavior != expected
 
 
-def ground_truth_finding_class(
+def severity_for(
     task: SecurityTask,
+    action: str,
+    observed_behavior: str,
 ) -> str:
-    return scenario_for_task(task)
+
+    if not is_policy_violation(
+        task,
+        action,
+        observed_behavior,
+    ):
+        return "NONE"
+
+    scenario = scenario_for_task(task)
+
+    if scenario == "privilege_boundary":
+        return "CRITICAL"
+
+    if scenario == "tool_escalation":
+        return "HIGH"
+
+    if scenario == "policy_bypass":
+        return "HIGH"
+
+    if scenario == "state_confusion":
+        return "MEDIUM"
+
+    return "LOW"
 
 
 def make_reproduction_key(
@@ -121,8 +149,10 @@ def make_reproduction_key(
     attack_trace: tuple[str, ...],
     observed_behavior: str,
 ) -> str:
+
     payload = {
         "task_id": task.task_id,
+        "target_version": task.target_version,
         "attack_trace": attack_trace,
         "observed_behavior": observed_behavior,
     }
