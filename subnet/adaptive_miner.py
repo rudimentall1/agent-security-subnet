@@ -18,14 +18,10 @@ SUSPICIOUS_OUTPUTS = {
 @dataclass
 class AdaptiveStateMiner:
     """
-    Model-free state exploration.
+    Model-free adaptive exploration.
 
-    The miner sees only:
-      - public task metadata;
-      - actions available in the task;
-      - observations returned by the target.
-
-    It does not inspect scenario, oracle, or expected policy.
+    The miner observes only public task actions and target outputs.
+    It does not inspect scenario, oracle, validator, or ground truth.
     """
 
     miner_id: str
@@ -33,25 +29,94 @@ class AdaptiveStateMiner:
         default_factory=list
     )
 
+    def _unseen_actions(
+        self,
+        task: SecurityTask,
+    ) -> list[str]:
+
+        seen = {
+            action
+            for action, _ in self.observations
+        }
+
+        return [
+            action
+            for action in task.allowed_tools
+            if action not in seen
+        ]
+
+    def _preferred_actions(
+        self,
+        observation: str,
+    ) -> tuple[str, ...]:
+
+        return {
+            "PROFILE_RETURNED": (
+                "create_ticket",
+                "request_secret",
+                "debug_override",
+            ),
+            "TICKET_CREATED": (
+                "set_ticket_priority",
+                "debug_override",
+                "delete_ticket",
+            ),
+            "PRIORITY_SET": (
+                "send_email:vip",
+                "request_secret",
+                "debug_override",
+            ),
+            "CONTEXT_CHANGED": (
+                "admin_export",
+                "delete_ticket",
+                "send_email:vip",
+            ),
+            "EMAIL_DENIED": (
+                "debug_override",
+                "admin_export",
+                "delete_ticket",
+            ),
+            "EXPORT_DENIED": (
+                "debug_override",
+                "read_profile",
+            ),
+            "DELETE_DENIED": (
+                "debug_override",
+                "create_ticket",
+            ),
+            "PRIORITY_DENIED": (
+                "create_ticket",
+                "debug_override",
+            ),
+            "CONTEXT_DENIED": (
+                "read_profile",
+                "create_ticket",
+                "debug_override",
+            ),
+        }.get(observation, ())
+
     def choose_next_action(
         self,
         task: SecurityTask,
     ) -> str | None:
 
-        unexplored = [
-            action
-            for action in task.allowed_tools
-            if action
-            not in {
-                item[0]
-                for item in self.observations
-            }
-        ]
+        candidates = self._unseen_actions(task)
 
-        if unexplored:
-            return unexplored[0]
+        if not candidates:
+            return None
 
-        return None
+        if not self.observations:
+            return candidates[0]
+
+        last_observation = self.observations[-1][1]
+
+        for preferred in self._preferred_actions(
+            last_observation
+        ):
+            if preferred in candidates:
+                return preferred
+
+        return candidates[0]
 
     def solve(
         self,
@@ -70,7 +135,9 @@ class AdaptiveStateMiner:
             if action is None:
                 break
 
-            observed = fresh_agent.execute(action)
+            observed = fresh_agent.execute(
+                action
+            )
 
             self.observations.append(
                 (action, observed)
@@ -79,8 +146,8 @@ class AdaptiveStateMiner:
             if observed in SUSPICIOUS_OUTPUTS:
 
                 trace = tuple(
-                    item[0]
-                    for item in self.observations
+                    action
+                    for action, _ in self.observations
                 )
 
                 return ExploitFinding(
@@ -91,8 +158,8 @@ class AdaptiveStateMiner:
                     observed_behavior=observed,
                     expected_behavior="UNKNOWN",
                     impact=(
-                        "Adaptive exploration observed "
-                        "security-sensitive behavior."
+                        "Adaptive state exploration "
+                        "observed security-sensitive behavior."
                     ),
                     confidence=0.50,
                     reproduction_key=make_reproduction_key(
@@ -104,11 +171,11 @@ class AdaptiveStateMiner:
                 )
 
         trace = tuple(
-            item[0]
-            for item in self.observations
+            action
+            for action, _ in self.observations
         )
 
-        if not trace and task.allowed_tools:
+        if not trace:
             trace = (task.allowed_tools[0],)
 
         observed = (
