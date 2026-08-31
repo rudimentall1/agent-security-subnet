@@ -45,13 +45,13 @@ class TestStatefulBenchmark(unittest.TestCase):
             },
         )
 
-    def test_runs_sixty_primary_evaluations(self):
+    def test_runs_eighty_primary_evaluations(self):
 
         evaluations = run_benchmark()
 
         self.assertEqual(
             len(evaluations),
-            60,
+            80,
         )
 
     def test_all_expected_scenarios_are_present(self):
@@ -90,7 +90,7 @@ class TestStatefulBenchmark(unittest.TestCase):
 
         self.assertEqual(
             len(safe),
-            12,
+            16,
         )
 
         for item in safe:
@@ -215,7 +215,7 @@ class TestStatefulBenchmark(unittest.TestCase):
 
         self.assertEqual(
             summary["evaluations"],
-            60,
+            80,
         )
 
         for metric in (
@@ -238,7 +238,7 @@ class TestStatefulBenchmark(unittest.TestCase):
             0.0,
         )
 
-    def test_leaderboard_contains_six_strategies(self):
+    def test_leaderboard_contains_eight_strategies(self):
 
         evaluations = run_benchmark()
         summary = summarize(
@@ -247,7 +247,7 @@ class TestStatefulBenchmark(unittest.TestCase):
 
         self.assertEqual(
             len(summary["leaderboard"]),
-            6,
+            8,
         )
 
         miner_ids = {
@@ -266,10 +266,14 @@ class TestStatefulBenchmark(unittest.TestCase):
                 "state",
                 "shallow",
                 "broad",
+                "adaptive",
+                "observation",
             },
         )
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
 
