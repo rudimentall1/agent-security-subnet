@@ -52,8 +52,8 @@ class AdaptiveStateMiner:
 
         return {
             "PROFILE_RETURNED": (
-                "debug_override",
                 "create_ticket",
+                "debug_override",
                 "request_secret",
             ),
             "TICKET_CREATED": (
