@@ -13,6 +13,7 @@ from subnet.stateful_miner import (
     StatefulMiner,
     ToolEscalationMiner,
 )
+from subnet.beam_adaptive_miner import BeamAdaptiveStateMiner
 from subnet.adaptive_miner import (
     AdaptiveStateMiner,
 )
@@ -132,13 +133,14 @@ TASK_CASES = (
 
 
 MINER_FACTORIES = (
+    ("beam", BeamAdaptiveStateMiner),
     ("boundary", BoundarySequenceMiner),
     ("policy", PolicyBypassMiner),
     ("tool", ToolEscalationMiner),
     ("state", StateConfusionMiner),
     ("shallow", ShallowMiner),
     ("broad", BroadStateMiner),
-    ("adaptive", AdaptiveStateMiner),
+    ("adaptive", BeamAdaptiveStateMiner),
     ("observation", ObservationDrivenMiner),
 )
 
