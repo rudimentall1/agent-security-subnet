@@ -14,9 +14,6 @@ from subnet.stateful_miner import (
     ToolEscalationMiner,
 )
 from subnet.beam_adaptive_miner import BeamAdaptiveStateMiner
-from subnet.adaptive_miner import (
-    AdaptiveStateMiner,
-)
 from subnet.observation_miner import (
     ObservationDrivenMiner,
 )
@@ -27,7 +24,6 @@ from subnet.stateful_target import (
 from subnet.stateful_validator import (
     StatefulValidator,
 )
-
 
 @dataclass(frozen=True)
 class InitialState:
@@ -133,14 +129,13 @@ TASK_CASES = (
 
 
 MINER_FACTORIES = (
-    ("beam", BeamAdaptiveStateMiner),
+    ("adaptive", BeamAdaptiveStateMiner),
     ("boundary", BoundarySequenceMiner),
     ("policy", PolicyBypassMiner),
     ("tool", ToolEscalationMiner),
     ("state", StateConfusionMiner),
     ("shallow", ShallowMiner),
     ("broad", BroadStateMiner),
-    ("adaptive", BeamAdaptiveStateMiner),
     ("observation", ObservationDrivenMiner),
 )
 
@@ -596,4 +591,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
