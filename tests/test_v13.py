@@ -11,7 +11,7 @@ from subnet.validator import Validator
 from subnet.scoring import calculate_reward
 
 
-def test_one_task(
+def run_one_task(
     task_id: str,
     miner,
 ):
