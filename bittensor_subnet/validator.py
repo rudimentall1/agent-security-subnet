@@ -8,7 +8,13 @@ from typing import Iterable
 import bittensor as bt
 import httpx
 
-from subnet.protocol import ExploitFinding, SecurityTask, VerificationResult, build_task
+from subnet.protocol import (
+    ExploitFinding,
+    SecurityTask,
+    VerificationResult,
+    build_task,
+    make_reproduction_key,
+)
 from subnet.stateful_oracle import scenario_for_task
 from subnet.stateful_target import build_target
 from subnet.stateful_validator import StatefulValidator
@@ -55,19 +61,45 @@ def task_to_request(task: SecurityTask) -> SecurityTaskRequest:
     )
 
 
-def response_to_finding(response: FindingResponse) -> ExploitFinding:
-    """Reconstruct the internal finding without accepting oracle data from a miner."""
+def response_to_finding(
+    response: FindingResponse,
+    task: SecurityTask,
+    miner_hotkey_ss58: str,
+) -> ExploitFinding:
+    """Convert an untrusted network response into a validator-owned finding.
+
+    Identity, reproduction key and step count are derived/validated here rather
+    than trusting miner-controlled metadata. In particular, a miner cannot
+    manufacture a second identity or a collision-resistant key that differs
+    from the trajectory the validator actually received.
+    """
+    trace = tuple(response.attack_trace)
+    if response.task_id != task.task_id:
+        raise ValueError("miner response task_id does not match request")
+    if not trace:
+        raise ValueError("miner returned an empty attack trace")
+    if len(trace) > task.max_steps:
+        raise ValueError("miner returned a trace exceeding the task budget")
+    if response.steps_to_discovery != len(trace):
+        raise ValueError("steps_to_discovery does not match attack_trace length")
+
+    reproduction_key = make_reproduction_key(
+        task=task,
+        attack_trace=trace,
+        observed_behavior=response.observed_behavior,
+    )
+
     return ExploitFinding(
-        task_id=response.task_id,
-        miner_id=response.miner_id,
+        task_id=task.task_id,
+        miner_id=miner_hotkey_ss58,
         claim_type=response.claim_type,
-        attack_trace=tuple(response.attack_trace),
+        attack_trace=trace,
         observed_behavior=response.observed_behavior,
         expected_behavior="",
         impact=response.impact,
         confidence=response.confidence,
-        reproduction_key=response.reproduction_key,
-        steps_to_discovery=response.steps_to_discovery,
+        reproduction_key=reproduction_key,
+        steps_to_discovery=len(trace),
     )
 
 
@@ -78,7 +110,11 @@ class ValidatorClient:
         self.wallet = wallet
         self.config = config
 
-    async def query(self, endpoint: MinerEndpoint, task: SecurityTask) -> FindingResponse:
+    async def query(
+        self,
+        endpoint: MinerEndpoint,
+        task: SecurityTask,
+    ) -> FindingResponse:
         payload = task_to_request(task).model_dump_json().encode("utf-8")
         path = "/generate"
         headers = bt.http_auth.sign(
@@ -112,9 +148,13 @@ class StatefulHTTPValidator:
         self.client = client
         self.verifier = StatefulValidator()
 
-    async def evaluate(self, endpoint: MinerEndpoint, task: SecurityTask) -> VerificationResult:
+    async def evaluate(
+        self,
+        endpoint: MinerEndpoint,
+        task: SecurityTask,
+    ) -> VerificationResult:
         response = await self.client.query(endpoint, task)
-        finding = response_to_finding(response)
+        finding = response_to_finding(response, task, endpoint.hotkey_ss58)
         # Scenario mapping is validator-only. The miner receives only the public task.
         agent = build_target(scenario_for_task(task))
         return self.verifier.verify(task, agent, finding)
@@ -134,5 +174,10 @@ async def evaluate_many(
     return await asyncio.gather(*(one(task) for task in tasks))
 
 
-def make_benchmark_tasks(count: int, *, prefix: str = "http") -> list[SecurityTask]:
-    return [build_task(f"{prefix}-{i:04d}") for i in range(count)]
+def make_benchmark_tasks(count: int, *, prefix: str = "state") -> list[SecurityTask]:
+    """Create deterministic benchmark tasks covered by the private oracle."""
+    if count < 1:
+        return []
+    if prefix != "state":
+        raise ValueError("benchmark prefix must be 'state' for the current oracle")
+    return [build_task(f"state-{(i % 10) + 1:03d}") for i in range(count)]
