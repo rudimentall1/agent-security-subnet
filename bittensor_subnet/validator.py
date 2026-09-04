@@ -9,6 +9,7 @@ import bittensor as bt
 import httpx
 
 from subnet.protocol import ExploitFinding, SecurityTask, VerificationResult, build_task
+from subnet.stateful_oracle import scenario_for_task
 from subnet.stateful_target import build_target
 from subnet.stateful_validator import StatefulValidator
 
@@ -55,15 +56,13 @@ def task_to_request(task: SecurityTask) -> SecurityTaskRequest:
 
 
 def response_to_finding(response: FindingResponse) -> ExploitFinding:
-    """Reconstruct the internal finding without exposing oracle state."""
+    """Reconstruct the internal finding without accepting oracle data from a miner."""
     return ExploitFinding(
         task_id=response.task_id,
         miner_id=response.miner_id,
         claim_type=response.claim_type,
         attack_trace=tuple(response.attack_trace),
         observed_behavior=response.observed_behavior,
-        # The expected behavior is validator-only and is intentionally filled
-        # from the replay target rather than the network response.
         expected_behavior="",
         impact=response.impact,
         confidence=response.confidence,
@@ -79,11 +78,7 @@ class ValidatorClient:
         self.wallet = wallet
         self.config = config
 
-    async def query(
-        self,
-        endpoint: MinerEndpoint,
-        task: SecurityTask,
-    ) -> FindingResponse:
+    async def query(self, endpoint: MinerEndpoint, task: SecurityTask) -> FindingResponse:
         payload = task_to_request(task).model_dump_json().encode("utf-8")
         path = "/generate"
         headers = bt.http_auth.sign(
@@ -97,7 +92,11 @@ class ValidatorClient:
         headers.setdefault("content-type", "application/json")
 
         async with httpx.AsyncClient(timeout=self.config.request_timeout) as client:
-            response = await client.post(endpoint.url.rstrip("/") + path, content=payload, headers=headers)
+            response = await client.post(
+                endpoint.url.rstrip("/") + path,
+                content=payload,
+                headers=headers,
+            )
             response.raise_for_status()
             data = response.json()
 
@@ -113,21 +112,11 @@ class StatefulHTTPValidator:
         self.client = client
         self.verifier = StatefulValidator()
 
-    async def evaluate(
-        self,
-        endpoint: MinerEndpoint,
-        task: SecurityTask,
-    ) -> VerificationResult:
+    async def evaluate(self, endpoint: MinerEndpoint, task: SecurityTask) -> VerificationResult:
         response = await self.client.query(endpoint, task)
         finding = response_to_finding(response)
-        agent = build_target(task.target_name if task.target_name in {
-            "privilege_boundary",
-            "policy_bypass",
-            "tool_escalation",
-            "state_confusion",
-        } else "privilege_boundary")
-        # StatefulValidator derives the scenario from the task. The target
-        # object itself carries the state machine; no oracle data crosses HTTP.
+        # Scenario mapping is validator-only. The miner receives only the public task.
+        agent = build_target(scenario_for_task(task))
         return self.verifier.verify(task, agent, finding)
 
 
