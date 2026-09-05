@@ -56,7 +56,7 @@ class BittensorChainAdapter:
         scores: dict[int, float] = {}
         for uid, results in results_by_uid.items():
             values = [calculate_reward(result) for result in results]
-            scores[int(uid)] = sum(values) / len(values) if values else 0.0
+            scores[int(uid)] = round(sum(values) / len(values), 12) if values else 0.0
         return scores
 
     def set_weights(self, scores_by_uid: Mapping[int, float]):
