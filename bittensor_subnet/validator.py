@@ -32,9 +32,11 @@ class MinerEndpoint:
 
 @dataclass(frozen=True)
 class ValidatorConfig:
-    """Runtime settings for the validator-side HTTP client."""
+    """Runtime settings for the validator-side HTTP client and chain adapter."""
 
     validator_hotkey_ss58: str
+    netuid: int = 0
+    network: str = "test"
     request_timeout: float = 15.0
     max_concurrency: int = 16
 
@@ -51,6 +53,8 @@ class ValidatorConfig:
             )
         return cls(
             validator_hotkey_ss58=hotkey,
+            netuid=int(os.getenv("VERITENSOR_NETUID", "0")),
+            network=os.getenv("VERITENSOR_NETWORK", "test").strip() or "test",
             request_timeout=float(os.getenv("VERITENSOR_REQUEST_TIMEOUT", "15")),
             max_concurrency=max(1, int(os.getenv("VERITENSOR_MAX_CONCURRENCY", "16"))),
         )
