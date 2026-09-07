@@ -203,7 +203,9 @@ async def main() -> None:
         hotkey=os.getenv("VERITENSOR_VALIDATOR_HOTKEY", "validator"),
     )
 
-    config = ValidatorConfig.from_env()
+    config = ValidatorConfig.from_env(
+        validator_hotkey_ss58=wallet.hotkey.ss58_address,
+    )
     client = ValidatorClient(wallet, config)
     validator = StatefulHTTPValidator(client)
 

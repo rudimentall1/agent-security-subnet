@@ -39,10 +39,16 @@ class ValidatorConfig:
     max_concurrency: int = 16
 
     @classmethod
-    def from_env(cls) -> "ValidatorConfig":
-        hotkey = os.getenv("VERITENSOR_VALIDATOR_HOTKEY_SS58", "").strip()
+    def from_env(cls, *, validator_hotkey_ss58: str | None = None) -> "ValidatorConfig":
+        hotkey = (
+            validator_hotkey_ss58
+            or os.getenv("VERITENSOR_VALIDATOR_HOTKEY_SS58", "")
+        ).strip()
         if not hotkey:
-            raise ValueError("VERITENSOR_VALIDATOR_HOTKEY_SS58 is required")
+            raise ValueError(
+                "validator hotkey SS58 is required; pass the loaded wallet hotkey "
+                "or set VERITENSOR_VALIDATOR_HOTKEY_SS58"
+            )
         return cls(
             validator_hotkey_ss58=hotkey,
             request_timeout=float(os.getenv("VERITENSOR_REQUEST_TIMEOUT", "15")),
