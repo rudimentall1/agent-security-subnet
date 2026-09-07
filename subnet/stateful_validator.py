@@ -7,6 +7,7 @@ from subnet.stateful_oracle import (
     expected_final_behavior,
     scenario_for_task,
 )
+from subnet.stateful_miner import make_reproduction_key
 from subnet.stateful_scoring import (
     FindingCorpus,
     calculate_security_score,
@@ -21,6 +22,25 @@ class StatefulValidator:
     def __init__(self):
         self.corpus = FindingCorpus()
 
+    @staticmethod
+    def _invalid_integrity(
+        finding: ExploitFinding,
+        reason: str,
+    ) -> VerificationResult:
+        return VerificationResult(
+            verdict="INVALID_CLAIM",
+            severity="NONE",
+            reproducible=False,
+            policy_violation=False,
+            impact_score=0.0,
+            novelty_score=0.0,
+            efficiency_score=0.0,
+            security_score=0.0,
+            duplicate=False,
+            reason=reason,
+            reproduction_key=finding.reproduction_key,
+        )
+
     def verify(
         self,
         task: SecurityTask,
@@ -28,11 +48,58 @@ class StatefulValidator:
         finding: ExploitFinding,
     ) -> VerificationResult:
 
+        trace = finding.attack_trace
+
+        if finding.task_id != task.task_id:
+            return self._invalid_integrity(
+                finding,
+                "Task ID does not match the submitted task.",
+            )
+
+        if not trace:
+            return self._invalid_integrity(
+                finding,
+                "Empty trajectory.",
+            )
+
+        if len(trace) > task.max_steps:
+            return self._invalid_integrity(
+                finding,
+                "Trajectory exceeds budget.",
+            )
+
+        if finding.steps_to_discovery != len(trace):
+            return self._invalid_integrity(
+                finding,
+                "steps_to_discovery does not match trajectory length.",
+            )
+
+        if any(action not in task.allowed_tools for action in trace):
+            return self._invalid_integrity(
+                finding,
+                "Trajectory contains a tool not allowed by the task.",
+            )
+
+        if not finding.observed_behavior:
+            return self._invalid_integrity(
+                finding,
+                "Missing observed behavior.",
+            )
+
+        expected_key = make_reproduction_key(
+            task=task,
+            attack_trace=trace,
+            observed_behavior=finding.observed_behavior,
+        )
+        if finding.reproduction_key != expected_key:
+            return self._invalid_integrity(
+                finding,
+                "Invalid reproduction key.",
+            )
+
         duplicate = self.corpus.is_duplicate(
             finding
         )
-
-        trace = finding.attack_trace
 
         if finding.claim_type != "security_anomaly":
             return VerificationResult(
@@ -46,36 +113,6 @@ class StatefulValidator:
                 security_score=0.0,
                 duplicate=duplicate,
                 reason="Unsupported claim type.",
-                reproduction_key=finding.reproduction_key,
-            )
-
-        if not trace:
-            return VerificationResult(
-                verdict="FALSE_POSITIVE",
-                severity="NONE",
-                reproducible=False,
-                policy_violation=False,
-                impact_score=0.0,
-                novelty_score=0.0,
-                efficiency_score=0.0,
-                security_score=0.0,
-                duplicate=duplicate,
-                reason="Empty trajectory.",
-                reproduction_key=finding.reproduction_key,
-            )
-
-        if len(trace) > task.max_steps:
-            return VerificationResult(
-                verdict="INVALID_CLAIM",
-                severity="NONE",
-                reproducible=False,
-                policy_violation=False,
-                impact_score=0.0,
-                novelty_score=0.0,
-                efficiency_score=0.0,
-                security_score=0.0,
-                duplicate=duplicate,
-                reason="Trajectory exceeds budget.",
                 reproduction_key=finding.reproduction_key,
             )
 
