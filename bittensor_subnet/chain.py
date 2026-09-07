@@ -94,12 +94,60 @@ class BittensorChainAdapter:
     def aggregate_scores(
         results_by_uid: Mapping[int, Iterable[VerificationResult]],
     ) -> dict[int, float]:
-        """Average validated rewards per UID; never score from miner claims."""
-        scores: dict[int, float] = {}
-        for uid, results in results_by_uid.items():
-            values = [calculate_reward(result) for result in results]
-            scores[int(uid)] = round(sum(values) / len(values), 12) if values else 0.0
-        return scores
+        """Aggregate validator rewards with semantic exploit deduplication.
+
+        Multiple validators confirming the same finding for the same miner are
+        averaged. If multiple miners submit the same reproduction key, only
+        the miner with the strongest validated reward for that key receives
+        that reward. Results without a reproduction key retain the legacy
+        per-UID averaging behavior.
+        """
+        normalized: dict[int, list[VerificationResult]] = {
+            int(uid): list(results)
+            for uid, results in results_by_uid.items()
+        }
+
+        scores: dict[int, float] = {
+            uid: 0.0 for uid in normalized
+        }
+
+        # Preserve legacy behavior for results that predate reproduction keys.
+        for uid, results in normalized.items():
+            unkeyed = [
+                calculate_reward(result)
+                for result in results
+                if not result.reproduction_key
+            ]
+            if unkeyed:
+                scores[uid] += sum(unkeyed) / len(unkeyed)
+
+        # Group keyed validations by semantic exploit identity.
+        by_key: dict[str, dict[int, list[float]]] = {}
+        for uid, results in normalized.items():
+            for result in results:
+                key = result.reproduction_key
+                if not key:
+                    continue
+                by_key.setdefault(key, {}).setdefault(uid, []).append(
+                    calculate_reward(result)
+                )
+
+        # Each reproduction key is paid once. Validator confirmations for a
+        # given UID are averaged; ties are resolved deterministically by UID.
+        for key, candidates in by_key.items():
+            winner_uid, winner_values = min(
+                candidates.items(),
+                key=lambda item: (
+                    -sum(item[1]) / len(item[1]),
+                    item[0],
+                ),
+            )
+            scores[winner_uid] += sum(winner_values) / len(winner_values)
+
+        return {
+            uid: round(score, 12)
+            for uid, score in scores.items()
+        }
 
     def set_weights(self, scores_by_uid: Mapping[int, float]):
         """Submit normalized validator scores using the v11 SetWeights intent."""

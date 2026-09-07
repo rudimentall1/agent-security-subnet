@@ -46,6 +46,7 @@ class StatefulValidator:
                 security_score=0.0,
                 duplicate=duplicate,
                 reason="Unsupported claim type.",
+                reproduction_key=finding.reproduction_key,
             )
 
         if not trace:
@@ -60,6 +61,7 @@ class StatefulValidator:
                 security_score=0.0,
                 duplicate=duplicate,
                 reason="Empty trajectory.",
+                reproduction_key=finding.reproduction_key,
             )
 
         if len(trace) > task.max_steps:
@@ -74,6 +76,7 @@ class StatefulValidator:
                 security_score=0.0,
                 duplicate=duplicate,
                 reason="Trajectory exceeds budget.",
+                reproduction_key=finding.reproduction_key,
             )
 
         replay_agent = agent.clone()
@@ -174,4 +177,5 @@ class StatefulValidator:
             security_score=security_score,
             duplicate=duplicate,
             reason=reason,
+            reproduction_key=finding.reproduction_key,
         )

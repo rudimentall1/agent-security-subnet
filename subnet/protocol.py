@@ -40,6 +40,7 @@ class VerificationResult:
     security_score: float
     duplicate: bool
     reason: str
+    reproduction_key: str | None = None
 
 
 def build_task(

@@ -5,7 +5,7 @@ from bittensor_subnet.chain import BittensorChainAdapter, ChainConfig
 from subnet.protocol import VerificationResult
 
 
-def result(score: float) -> VerificationResult:
+def result(score: float, key: str | None = None) -> VerificationResult:
     return VerificationResult(
         verdict="VERIFIED",
         severity="HIGH",
@@ -17,6 +17,7 @@ def result(score: float) -> VerificationResult:
         security_score=score,
         duplicate=False,
         reason="test",
+        reproduction_key=key,
     )
 
 
@@ -30,6 +31,36 @@ class TestBittensorChain(unittest.TestCase):
             }
         )
         self.assertEqual(scores, {1: 0.6, 2: 0.2, 3: 0.0})
+
+    def test_aggregate_scores_deduplicates_same_exploit_across_validators_and_miners(self):
+        scores = BittensorChainAdapter.aggregate_scores(
+            {
+                1: [result(0.8, "exploit-A"), result(0.6, "exploit-A")],
+                2: [result(0.9, "exploit-A")],
+                3: [result(0.4, "exploit-B")],
+            }
+        )
+
+        # UID 2 wins exploit-A with 0.9. UID 1's two validator
+        # confirmations are averaged, but the duplicate exploit is not paid
+        # to UID 1. UID 3 keeps its independent finding.
+        self.assertEqual(
+            scores,
+            {
+                1: 0.0,
+                2: 0.9,
+                3: 0.4,
+            },
+        )
+
+    def test_aggregate_scores_preserves_unkeyed_legacy_behavior(self):
+        scores = BittensorChainAdapter.aggregate_scores(
+            {
+                1: [result(0.8), result(0.4)],
+                2: [],
+            }
+        )
+        self.assertEqual(scores, {1: 0.6, 2: 0.0})
 
     def test_set_weights_normalizes_scores_and_uses_v11_intent(self):
         wallet = Mock()
