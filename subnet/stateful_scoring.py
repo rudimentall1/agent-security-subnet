@@ -41,7 +41,7 @@ def calculate_security_score(
     efficiency_score: float,
 ) -> float:
 
-    if not reproducible or not policy_violation:
+    if not reproducible or not policy_violation or not novel:
         return 0.0
 
     weights = {
@@ -56,9 +56,7 @@ def calculate_security_score(
         severity
     ]
 
-    novelty_weight = (
-        1.0 if novel else 0.0
-    )
+    novelty_weight = 1.0
 
     return max(
         0.0,
