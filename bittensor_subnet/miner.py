@@ -168,7 +168,7 @@ class MinerService:
                 detail=f"authentication failed: {exc}",
             ) from exc
 
-        return caller.ss58_address
+        return wallet_hotkey
 
     def generate(
         self,
