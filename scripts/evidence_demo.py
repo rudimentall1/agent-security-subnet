@@ -9,9 +9,11 @@ import time
 import urllib.error
 import urllib.request
 
-from subnet.localnet_evidence import run_localnet_evidence
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from subnet.localnet_evidence import run_localnet_evidence
 ARTIFACT_DIR = ROOT / "evidence"
 ARTIFACT_PATH = ARTIFACT_DIR / "evidence_demo.json"
 MINER_URL = os.getenv(
