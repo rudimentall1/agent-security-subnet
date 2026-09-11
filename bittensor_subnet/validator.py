@@ -16,6 +16,7 @@ from subnet.protocol import (
     make_reproduction_key,
 )
 from subnet.stateful_oracle import scenario_for_task
+from subnet.stateful_scoring import FindingCorpus
 from subnet.stateful_target import build_target
 from subnet.stateful_validator import StatefulValidator
 
@@ -154,9 +155,13 @@ class ValidatorClient:
 class StatefulHTTPValidator:
     """End-to-end validator pipeline: request -> miner -> private replay -> score."""
 
-    def __init__(self, client: ValidatorClient) -> None:
+    def __init__(
+        self,
+        client: ValidatorClient,
+        corpus: FindingCorpus | None = None,
+    ) -> None:
         self.client = client
-        self.verifier = StatefulValidator()
+        self.verifier = StatefulValidator(corpus=corpus)
 
     async def evaluate(
         self,
@@ -184,10 +189,23 @@ async def evaluate_many(
     return await asyncio.gather(*(one(task) for task in tasks))
 
 
-def make_benchmark_tasks(count: int, *, prefix: str = "state") -> list[SecurityTask]:
-    """Create deterministic benchmark tasks covered by the private oracle."""
+def make_benchmark_tasks(
+    count: int,
+    *,
+    prefix: str = "state",
+    epoch: int | None = None,
+) -> list[SecurityTask]:
+    """Create deterministic benchmark tasks covered by the private oracle.
+
+    ``epoch`` scopes the reproduction-key namespace (see build_task). Pass
+    the current epoch in production (subnet_cycle derives it from chain
+    block height) so that verified findings from a prior epoch don't
+    permanently mark today's identical scenario as DUPLICATE.
+    """
     if count < 1:
         return []
     if prefix != "state":
         raise ValueError("benchmark prefix must be 'state' for the current oracle")
-    return [build_task(f"state-{(i % 10) + 1:03d}") for i in range(count)]
+    return [
+        build_task(f"state-{(i % 10) + 1:03d}", epoch=epoch) for i in range(count)
+    ]

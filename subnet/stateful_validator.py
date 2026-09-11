@@ -19,8 +19,8 @@ from subnet.stateful_target import (
 
 class StatefulValidator:
 
-    def __init__(self):
-        self.corpus = FindingCorpus()
+    def __init__(self, corpus: FindingCorpus | None = None):
+        self.corpus = corpus if corpus is not None else FindingCorpus()
 
     @staticmethod
     def _invalid_integrity(

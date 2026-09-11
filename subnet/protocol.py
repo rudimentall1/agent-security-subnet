@@ -46,9 +46,26 @@ class VerificationResult:
 def build_task(
     task_id: str,
     target_version: str = "0.6.0",
+    epoch: int | None = None,
 ) -> SecurityTask:
+    """Build a task, optionally scoped to an epoch.
+
+    When ``epoch`` is given, the wire-visible ``task_id`` is qualified with
+    it (e.g. ``state-001`` -> ``state-001-e42``) while ``parent_task_id``
+    keeps the base id that ``scenario_for_task``/``expected_final_behavior``
+    use to look up the (unchanged) policy. Because ``make_reproduction_key``
+    hashes ``task.task_id``, the same winning trajectory produces a
+    different reproduction key every epoch, so a solved scenario stops
+    paying rewards within an epoch (correctly -- it is a real duplicate)
+    but starts paying again next epoch instead of being dead forever. This
+    is what closes the reward-exhaustion failure recorded in
+    evidence/testnet_e2e_2026-09-08.md, where the subnet produced
+    set_weights=false on every cycle after the first.
+    """
+    qualified_id = task_id if epoch is None else f"{task_id}-e{epoch}"
     return SecurityTask(
-        task_id=task_id,
+        task_id=qualified_id,
+        parent_task_id=(task_id if epoch is not None else None),
         target_name="stateful-security-agent",
         target_version=target_version,
         objective=(

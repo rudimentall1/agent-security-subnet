@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Verify chain-discovery API is not the removed Bittensor API
+        run: |
+          python - <<'PY'
+          import bittensor as bt
+          # This is a canary for the exact bug fixed in bittensor_subnet/chain.py:
+          # bt.Subtensor.neurons / bt.Subtensor.metagraph() do not exist on
+          # bittensor 11.1.0. If a future SDK bump brings them back or removes
+          # `.read`, fail CI loudly instead of failing silently on testnet.
+          assert not hasattr(bt.Subtensor, "neurons"), (
+              "bt.Subtensor.neurons now exists -- re-check "
+              "bittensor_subnet/chain.py:metagraph() against the current SDK"
+          )
+          assert hasattr(bt.Subtensor, "read"), (
+              "bt.Subtensor.read no longer exists -- chain.py discovery is "
+              "broken against this SDK version"
+          )
+          print("chain-discovery API assumptions hold for", bt.__version__)
+          PY

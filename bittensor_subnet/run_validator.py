@@ -13,6 +13,7 @@ from bittensor_subnet.validator import (
     ValidatorConfig,
     make_benchmark_tasks,
 )
+from subnet.stateful_scoring import FindingCorpus
 
 
 def build_adapter(wallet: bt.Wallet, config: ValidatorConfig) -> BittensorChainAdapter:
@@ -86,16 +87,26 @@ async def benchmark_mode(
         )
 
 
+EPOCH_BLOCKS = int(os.getenv("VERITENSOR_EPOCH_BLOCKS", "360"))  # ~1h at 10s/block
+
+
 async def subnet_cycle(
     validator: StatefulHTTPValidator,
     adapter: BittensorChainAdapter,
     config: ValidatorConfig,
     cycle: int,
 ) -> None:
-    endpoints = adapter.miner_endpoints()
+    # One connection per cycle, reused for discovery and epoch lookup, instead
+    # of opening a fresh substrate connection per call.
+    sub = bt.Subtensor(network=config.network)
+    current_block = sub.block
+    epoch = current_block // EPOCH_BLOCKS
+
+    endpoints = adapter.miner_endpoints(sub=sub)
 
     print(
         f"cycle={cycle} "
+        f"block={current_block} epoch={epoch} "
         f"registered_miners={len(endpoints)}"
     )
 
@@ -107,7 +118,7 @@ async def subnet_cycle(
         1,
         int(os.getenv("VERITENSOR_BENCHMARK_COUNT", "3")),
     )
-    tasks = make_benchmark_tasks(task_count)
+    tasks = make_benchmark_tasks(task_count, epoch=epoch)
 
     evaluated = await asyncio.gather(
         *(
@@ -138,6 +149,23 @@ async def subnet_cycle(
     if not positive_scores:
         print("set_weights=false reason=no_positive_scores")
         return
+
+    rate_limit = adapter.weights_rate_limit_blocks(sub=sub)
+    last_set_block = adapter.own_last_weights_update_block(sub=sub)
+    if (
+        rate_limit is not None
+        and last_set_block is not None
+        and last_set_block > 0
+    ):
+        blocks_since = current_block - last_set_block
+        if blocks_since < rate_limit:
+            print(
+                f"set_weights=skipped reason=chain_rate_limit "
+                f"blocks_since_last_set={blocks_since} "
+                f"rate_limit_blocks={rate_limit} "
+                f"retry_in_blocks={rate_limit - blocks_since}"
+            )
+            return
 
     try:
         tx_result = adapter.set_weights(positive_scores)
@@ -207,7 +235,11 @@ async def main() -> None:
         validator_hotkey_ss58=wallet.hotkey.ss58_address,
     )
     client = ValidatorClient(wallet, config)
-    validator = StatefulHTTPValidator(client)
+
+    corpus_path = os.getenv("VERITENSOR_CORPUS_DB_PATH", "").strip()
+    corpus = FindingCorpus(storage_path=corpus_path or None)
+
+    validator = StatefulHTTPValidator(client, corpus=corpus)
 
     mode = os.getenv(
         "VERITENSOR_VALIDATOR_MODE",

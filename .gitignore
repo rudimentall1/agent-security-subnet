@@ -5,3 +5,5 @@ venv/
 .env
 .env.*
 *.log
+evidence/corpus.sqlite3
+*.sqlite3

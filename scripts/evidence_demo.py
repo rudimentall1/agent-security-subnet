@@ -61,6 +61,10 @@ def run_benchmark() -> str:
             "VERITENSOR_VALIDATOR_MODE": "benchmark",
             "VERITENSOR_BENCHMARK_COUNT": "3",
             "VERITENSOR_MINER_URL": MINER_URL,
+            "VERITENSOR_MINER_HOTKEY_SS58": os.getenv(
+                "VERITENSOR_MINER_HOTKEY_SS58",
+                "5DXcTqmJVUHMPMGmpnuzSVuLRqgwtPvU35mbNPZngomvbcFs",
+            ),
         }
     )
 
