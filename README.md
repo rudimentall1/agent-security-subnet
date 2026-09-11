@@ -8,7 +8,7 @@ Built for the [Bittensor Global Subnet Hackathon](https://www.hackquest.io/hacka
 | | |
 |---|---|
 | SDK | bittensor **11.1.0** (`Subtensor.read`, `SetWeights`, `http_auth`) |
-| Tests | 78 passing (`pytest -q`) |
+| Tests | 88 passing (`pytest -q`) |
 | Chain evidence | real testnet commit — see [`evidence/`](evidence/) |
 | Status | prototype; see [Limitations](#limitations) below before trusting any claim |
 
@@ -41,17 +41,27 @@ Task ─────────────────────────
                                      aggregate_scores() ──► set_weights()
 ```
 
-## 2. What it is honestly *not* (yet)
+## 2. Scope: deterministic policy testing, not LLM red-teaming
 
-The "agent" under test (`subnet/stateful_target.py`) is a small deterministic
-finite-state machine — 9 fixed tool names, a handful of state flags. It is
-**not** an LLM, and no LLM is in the loop on either the miner or the target
-side. If you came here expecting jailbreak/hallucination testing against a
-real language model, that is on the roadmap, not in the current code. What
-*is* real: authenticated Bittensor v11 transport, private-replay
-verification, on-chain weight submission, and a scoring mechanism designed
-so a solved scenario doesn't stay solved forever (see
-[`docs/economics/`](docs/economics/) and the epoch-scoping note below).
+This subnet tests whether an autonomous tool-calling system can be driven,
+through a sequence of otherwise-individually-plausible actions, into
+violating a security policy — a failure mode that exists regardless of
+what decides the system's next action. The target under test
+(`subnet/stateful_target.py`) is a deterministic finite-state machine, not
+a language model, and no LLM is anywhere in this subnet's loop. That's a
+deliberate design choice, not a placeholder for one: a fully-specified
+state machine is what lets the validator's private replay be an *exact*
+reproducibility check (the same trace always produces the same observed
+behavior) rather than depend on a second model's non-deterministic
+judgment call about whether a policy was violated. If you came here
+looking for LLM jailbreak/hallucination benchmarking, that's a different
+problem — non-deterministic to verify by construction — that this subnet
+does not attempt to solve.
+
+The real, still-open limitation is task-space size (5 scenario templates,
+9 fixed action names), not the absence of a language model — see
+[Limitations](#limitations) and [`docs/economics/`](docs/economics/) for
+what that actually constrains.
 
 ## 3. Architecture
 
@@ -71,7 +81,7 @@ subnet/
   stateful_validator.py replay + verdict + severity + score
   stateful_scoring.py   FindingCorpus (dedup) + reward formula
 
-tests/          68 unit tests, no network required (bittensor calls are mocked)
+tests/          88 unit tests, no network required (bittensor calls are mocked)
 evidence/       real testnet run logs + on-chain commit record
 docs/economics/ reward-mechanism design notes and known attack surfaces
 ```
@@ -87,7 +97,7 @@ as the current design.
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest -q          # 78 passed, no network needed
+pytest -q          # 88 passed, no network needed
 ```
 
 ### Local miner + validator (no chain)
@@ -147,23 +157,55 @@ Two changes address this:
   `VERITENSOR_CORPUS_DB_PATH`): without this, a validator restart forgets
   every previously-paid finding, which is its own (smaller, epoch-bounded)
   exploit. Set the env var in production.
+- **`set_weights` respects the chain's own rate limit.** Confirmed live on
+  testnet 557: the chain rejects `set_weights` more often than once every
+  `weights_rate_limit` blocks (100 on this subnet), and the validator loop
+  previously attempted it every cycle regardless, mostly getting a
+  `ChainError`. `subnet_cycle` now reads `weights_rate_limit_blocks()` and
+  `own_last_weights_update_block()` and skips the attempt (rather than
+  submitting a doomed transaction) until the window has passed.
 
 This does not make the task space infinite — 5 scenario templates is still
 small. Expanding scenario generation is the next real step, not a solved
 problem; see `docs/economics/`.
+
+## Real testnet-557 validation log (2026-09-11)
+
+Beyond unit tests, the following was run live against testnet 557 after the
+fixes above (wallet `veritensor`, hotkey `validator2`, UID 4):
+
+- `registered_miners=3` — miner discovery via `sub.read("neurons", ...)`
+  works (previously crashed with `AttributeError` on the removed
+  `Subtensor.neurons`/`.metagraph()` API).
+- Across 11 consecutive cycles with `VERITENSOR_EPOCH_BLOCKS=3`: `state-001`
+  paid `VERIFIED reward=0.775` in each new epoch, correctly fell back to
+  `DUPLICATE`/`set_weights=false reason=no_positive_scores` only *within*
+  the same epoch (cycle 6, epoch unchanged from cycle 5), and paid again
+  the moment the epoch rolled over (cycle 7) — the reward-exhaustion
+  failure from the original evidence run did not reoccur.
+- A real `TimelockedWeightsCommitted` extrinsic was submitted and accepted
+  (block 7979794, reveal_round 32100223).
+- Discovered along the way: `verify_request()` had been returning the
+  miner's own hotkey instead of the actual caller's (fixed); `active` on
+  this subnet is `False` for every neuron including reachable miners, so
+  filtering on it silently produced `registered_miners=0` (fixed --
+  `miner_endpoints()` now filters on routability, not `active`); the chain
+  rate-limits `set_weights` and the loop wasn't accounting for it (fixed).
 
 ## Limitations
 
 Written plainly, because a security-testing project that overstates its own
 status is not a good look.
 
-- **No LLM anywhere.** The target agent is a deterministic FSM with 9 action
-  names and 6-step budgets. It is enumerable by a fixed strategy (see
-  `subnet/stateful_miner.py::BoundarySequenceMiner`) — this currently
-  rewards "knows the answer" more than "can attack an unfamiliar system".
-- **Small task space.** 5 scenario templates. Epoch-scoping (above) prevents
-  the mechanism from dying, but does not make finding a solution hard after
-  the first epoch it's known.
+- **The task space is small and the target is enumerable.** 5 scenario
+  templates, 9 fixed action names, 6-step budgets — the target is fully
+  solvable by a fixed strategy (`subnet/stateful_miner.py::BoundarySequenceMiner`).
+  Epoch-scoping (above) keeps the mechanism from dying once a scenario is
+  solved, but doesn't make finding a solution hard after the first epoch
+  it's known. This is the real scaling axis (not adding an LLM — see
+  [Scope](#2-scope-deterministic-policy-testing-not-llm-red-teaming)
+  above); expanding scenario generation is the next real step, not solved
+  here.
 - **`FindingCorpus` persistence is opt-in**, not the default. Without
   `VERITENSOR_CORPUS_DB_PATH` set, a validator restart forgets prior
   findings. Two independent validators also don't share a corpus with each
@@ -180,11 +222,13 @@ status is not a good look.
   hotkey instead of the actual caller's hotkey (the real return value of
   `bt.http_auth.verify()` was computed and discarded) — every caller was
   indistinguishable from the miner itself to any downstream code.
-- **Chain-write paths (`set_weights`, real testnet discovery) are covered by
-  mocked unit tests, not integration tests against a live chain**, because
-  this repository's development environment has no network path to a
-  Bittensor node. `evidence/` contains the real testnet run that *was*
-  executed directly on the target server.
+- **Chain-write paths are unit-tested with mocks; live validation is a
+  point-in-time log, not continuous CI.** The mechanics (`set_weights`,
+  neuron discovery, the rate-limit skip) were run live against testnet 557
+  on 2026-09-11 (see the validation log above) — this isn't untested, but
+  it also isn't re-verified against a live chain on every change the way
+  the 88 unit tests are. This repository's own CI has no network path to
+  a Bittensor node.
 
 ## Evidence
 
