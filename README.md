@@ -184,7 +184,10 @@ fixes above (wallet `veritensor`, hotkey `validator2`, UID 4):
   the moment the epoch rolled over (cycle 7) — the reward-exhaustion
   failure from the original evidence run did not reoccur.
 - A real `TimelockedWeightsCommitted` extrinsic was submitted and accepted
-  (block 7979794, reveal_round 32100223).
+  (block 7979794, reveal_round 32100223). A later live read at block 7983401
+  showed `timelocked_weight_commits={}` and revealed weights containing
+  validator UID 4, confirming that the commit-reveal path completed and the
+  validator's weights were applied on-chain.
 - Discovered along the way: `verify_request()` had been returning the
   miner's own hotkey instead of the actual caller's (fixed); `active` on
   this subnet is `False` for every neuron including reachable miners, so
