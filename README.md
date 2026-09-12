@@ -10,7 +10,7 @@ Built for the [Bittensor Global Subnet Hackathon](https://www.hackquest.io/hacka
 | | |
 |---|---|
 | SDK | bittensor **11.1.0** (`Subtensor.read`, `SetWeights`, `http_auth`) |
-| Tests | 90 passing (`pytest -q`) |
+| Tests | 106 passing (`pytest -q`) |
 | Chain evidence | real testnet commit — see [`evidence/`](evidence/) |
 | Status | prototype; see [Limitations](#limitations) below before trusting any claim |
 
@@ -82,8 +82,13 @@ subnet/
   stateful_miner.py     reference miner strategies
   stateful_validator.py replay + verdict + severity + score
   stateful_scoring.py   FindingCorpus (dedup) + reward formula
+  oaa.py                vendored open-agent-attestation reference implementation
+  oaa_bridge.py         verdict -> OAA-signed attestation (see section 6)
 
-tests/          90 unit tests, no network required (bittensor calls are mocked)
+scripts/
+  oaa_to_guardrail_suggestion.py  signed attestation -> suggested guardrail rule (human review)
+
+tests/          106 unit tests, no network required (bittensor calls are mocked)
 evidence/       real testnet run logs + on-chain commit record
 docs/economics/ reward-mechanism design notes and known attack surfaces
 ```
@@ -99,7 +104,7 @@ as the current design.
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest -q          # 90 passed, no network needed
+pytest -q          # 106 passed, no network needed
 ```
 
 ### Local miner + validator (no chain)
@@ -196,6 +201,51 @@ fixes above (wallet `veritensor`, hotkey `validator2`, UID 4):
   filtering on it silently produced `registered_miners=0` (fixed --
   `miner_endpoints()` now filters on routability, not `active`); the chain
   rate-limits `set_weights` and the loop wasn't accounting for it (fixed).
+
+## 6. Portable proof: OAA-signed findings
+
+A `VERIFIED` finding is more than a number in this subnet's own reward
+ledger -- it's independently checkable by anyone, with no access to this
+validator's server or database, using
+[OAA (open-agent-attestation)](https://github.com/rudimentall1/open-agent-attestation):
+a small, vendor-neutral standard (Ed25519-signed JWTs) for signing
+decisions about agent actions, already used independently by two other
+projects by this author
+([agent-guardrail](https://github.com/rudimentall1/agent-guardrail),
+[agentic-wallet-guardian-v3](https://github.com/rudimentall1/agentic-wallet-guardian-v3)).
+
+```
+VERIFIED finding ──► issue_finding_attestation() ──► Ed25519-signed JWT
+  (subnet/oaa_bridge.py)                              │
+                                                        ▼
+                                    evidence/attestations/<reproduction_key>.jwt
+                                                        │
+                                          anyone holding only the public key:
+                                                        ▼
+                                              subnet/oaa.py::verify(token, public_key)
+```
+
+Enable it by setting `VERITENSOR_OAA_PRIVATE_KEY_PATH` (path to an Ed25519
+private key PEM — generate one with `subnet/oaa.py::generate_keypair()`);
+off by default, changes nothing else about the validator loop. Each
+`VERIFIED` verdict then writes a signed attestation to
+`evidence/attestations/<reproduction_key>.jwt` (see
+`bittensor_subnet/run_validator.py::evaluate_endpoint`,
+`tests/test_run_validator_oaa_issuance.py`). `DUPLICATE` and
+`FALSE_POSITIVE` verdicts issue nothing — there's nothing to attest.
+
+**What this does not claim:** automatic downstream enforcement.
+`agent-guardrail`'s policy schema
+([`policies/default.yaml`](https://github.com/rudimentall1/agent-guardrail/blob/main/guardrail/policies/default.yaml)
+in that repo) gates a single tool call at a time (rate limits, argument
+regexes, numeric caps, domain rules) — it has no concept of blocking a
+specific multi-step *sequence*, which is what this subnet finds. Claiming
+this "closes the loop" automatically would be a schema mismatch dressed up
+as an integration. Instead, `scripts/oaa_to_guardrail_suggestion.py` reads
+a signed attestation and prints a *suggested* policy fragment (gating the
+exploit chain's final tool call behind confirmation) for a human to review
+— see the disclaimer baked into its own output, and
+`tests/test_oaa_to_guardrail_suggestion.py`.
 
 ## Limitations
 

@@ -167,22 +167,23 @@ class StatefulHTTPValidator:
         self,
         endpoint: MinerEndpoint,
         task: SecurityTask,
-    ) -> VerificationResult:
+    ) -> tuple[ExploitFinding, VerificationResult]:
         response = await self.client.query(endpoint, task)
         finding = response_to_finding(response, task, endpoint.hotkey_ss58)
         # Scenario mapping is validator-only. The miner receives only the public task.
         agent = build_target(scenario_for_task(task))
-        return self.verifier.verify(task, agent, finding)
+        result = self.verifier.verify(task, agent, finding)
+        return finding, result
 
 
 async def evaluate_many(
     validator: StatefulHTTPValidator,
     endpoint: MinerEndpoint,
     tasks: Iterable[SecurityTask],
-) -> list[VerificationResult]:
+) -> list[tuple[ExploitFinding, VerificationResult]]:
     semaphore = asyncio.Semaphore(validator.client.config.max_concurrency)
 
-    async def one(task: SecurityTask) -> VerificationResult:
+    async def one(task: SecurityTask) -> tuple[ExploitFinding, VerificationResult]:
         async with semaphore:
             return await validator.evaluate(endpoint, task)
 

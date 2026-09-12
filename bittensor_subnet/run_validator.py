@@ -13,6 +13,7 @@ from bittensor_subnet.validator import (
     ValidatorConfig,
     make_benchmark_tasks,
 )
+from subnet.oaa_bridge import issue_finding_attestation
 from subnet.stateful_scoring import FindingCorpus
 
 
@@ -27,6 +28,32 @@ def build_adapter(wallet: bt.Wallet, config: ValidatorConfig) -> BittensorChainA
     )
 
 
+def _load_oaa_signing_config() -> tuple[str, bytes] | None:
+    """Returns (issuer, private_key_pem) if OAA attestation is configured,
+    else None. Opt-in: without VERITENSOR_OAA_PRIVATE_KEY_PATH set, no
+    attestations are issued and nothing else about the validator loop
+    changes."""
+    key_path = os.getenv("VERITENSOR_OAA_PRIVATE_KEY_PATH", "").strip()
+    if not key_path:
+        return None
+    issuer = os.getenv(
+        "VERITENSOR_OAA_ISSUER",
+        "https://github.com/rudimentall1/agent-security-subnet",
+    )
+    with open(key_path, "rb") as fh:
+        private_key_pem = fh.read()
+    return issuer, private_key_pem
+
+
+def _persist_attestation(token: str, reproduction_key: str) -> str:
+    out_dir = os.getenv("VERITENSOR_OAA_ATTESTATION_DIR", "evidence/attestations")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"{reproduction_key}.jwt")
+    with open(path, "w") as fh:
+        fh.write(token)
+    return path
+
+
 async def evaluate_endpoint(
     validator: StatefulHTTPValidator,
     uid: int,
@@ -34,10 +61,11 @@ async def evaluate_endpoint(
     tasks,
 ) -> tuple[int, list]:
     results = []
+    oaa_config = _load_oaa_signing_config()
 
     for task in tasks:
         try:
-            result = await validator.evaluate(endpoint, task)
+            finding, result = await validator.evaluate(endpoint, task)
         except Exception as exc:
             print(
                 f"uid={uid} task={task.task_id} "
@@ -52,6 +80,19 @@ async def evaluate_endpoint(
             f"reward={result.security_score:.6f} "
             f"reproducible={result.reproducible}"
         )
+
+        if oaa_config is not None and result.verdict == "VERIFIED":
+            issuer, private_key_pem = oaa_config
+            token = issue_finding_attestation(
+                task, finding, result,
+                issuer=issuer, private_key_pem=private_key_pem,
+            )
+            if token is not None:
+                path = _persist_attestation(token, result.reproduction_key)
+                print(
+                    f"uid={uid} task={task.task_id} "
+                    f"oaa_attestation=issued path={path}"
+                )
 
     return uid, results
 
@@ -77,7 +118,7 @@ async def benchmark_mode(
     )
 
     print("=== VERITENSOR BENCHMARK ===")
-    for task, result in zip(tasks, results):
+    for task, (finding, result) in zip(tasks, results):
         print(
             f"{task.task_id}: "
             f"verdict={result.verdict} "

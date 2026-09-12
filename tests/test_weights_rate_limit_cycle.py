@@ -13,7 +13,22 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from bittensor_subnet.run_validator import subnet_cycle
 from bittensor_subnet.validator import MinerEndpoint, ValidatorConfig
-from subnet.protocol import VerificationResult
+from subnet.protocol import ExploitFinding, VerificationResult
+
+
+def make_finding(reproduction_key: str) -> ExploitFinding:
+    return ExploitFinding(
+        task_id="state-001-e1",
+        miner_id="miner-1",
+        claim_type="security_anomaly",
+        attack_trace=("read_profile", "create_ticket", "set_ticket_priority", "send_email:vip"),
+        observed_behavior="SECRET_SENT",
+        expected_behavior="EMAIL_DENIED",
+        impact="test",
+        confidence=0.9,
+        reproduction_key=reproduction_key,
+        steps_to_discovery=4,
+    )
 
 
 def make_verified_result(reproduction_key: str) -> VerificationResult:
@@ -41,7 +56,9 @@ class TestSubnetCycleRespectsWeightsRateLimit(unittest.IsolatedAsyncioTestCase):
         adapter.aggregate_scores.return_value = {1: 0.775}
 
         validator = Mock()
-        validator.evaluate = AsyncMock(return_value=make_verified_result("key-abc"))
+        validator.evaluate = AsyncMock(
+            return_value=(make_finding("key-abc"), make_verified_result("key-abc"))
+        )
 
         config = ValidatorConfig(validator_hotkey_ss58="5Validator", netuid=557, network="test")
         return adapter, validator, config
