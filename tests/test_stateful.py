@@ -6,6 +6,7 @@ from subnet.stateful_miner import (
     PolicyBypassMiner,
     ToolEscalationMiner,
     StateConfusionMiner,
+    CredentialPivotMiner,
     ShallowMiner,
     BroadStateMiner,
 )
@@ -215,6 +216,61 @@ class TestStatefulSecurity(unittest.TestCase):
             "MEDIUM",
         )
 
+    def test_credential_pivot_confused_deputy(self):
+        """A self-declared role claim, with no real credential check,
+        must not be enough to unlock export_credentials -- exercising a
+        6th scenario template (task space expansion beyond the original
+        5) that probes the 'confused deputy' pattern rather than a
+        privilege/context boundary already covered above."""
+
+        task = build_task(
+            "state-011"
+        )
+
+        agent = build_target(
+            "credential_pivot"
+        )
+
+        miner = CredentialPivotMiner(
+            "pivot"
+        )
+
+        validator = StatefulValidator()
+
+        finding = miner.solve(
+            task,
+            agent,
+        )
+
+        self.assertEqual(
+            finding.attack_trace,
+            (
+                "debug_override",
+                "claim_role:admin",
+                "export_credentials",
+            ),
+        )
+
+        self.assertEqual(
+            finding.observed_behavior,
+            "CREDENTIALS_SENT",
+        )
+
+        result = validator.verify(
+            task,
+            agent,
+            finding,
+        )
+
+        self.assertEqual(
+            result.verdict,
+            "VERIFIED",
+        )
+
+        self.assertTrue(
+            result.policy_violation
+        )
+
     def test_safe_control_has_no_exploit(self):
 
         task = build_task(
@@ -231,6 +287,7 @@ class TestStatefulSecurity(unittest.TestCase):
             ToolEscalationMiner("c"),
             StateConfusionMiner("d"),
             BroadStateMiner("e"),
+            CredentialPivotMiner("f"),
         )
 
         validator = StatefulValidator()

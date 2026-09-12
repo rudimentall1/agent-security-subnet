@@ -107,6 +107,25 @@ class TestEpochScopedTasks(unittest.TestCase):
         self.assertTrue(all(t.parent_task_id is not None for t in tasks_epoch_5))
         self.assertTrue(all(t.parent_task_id is None for t in tasks_no_epoch))
 
+    def test_make_benchmark_tasks_reaches_every_scenario_the_oracle_knows(self):
+        """Regression test for a real bug found while integrating
+        credential_pivot.patch: make_benchmark_tasks used to hardcode
+        `% 10`, so scenarios added to stateful_oracle.py's _TASK_SCENARIOS
+        past index 10 (state-011/012, credential_pivot) were silently
+        unreachable by the actual validator loop -- even though they had
+        passing unit tests, because those tests called build_task()
+        directly instead of going through make_benchmark_tasks(). This
+        asserts every state_id the oracle maps is actually generated when
+        enough tasks are requested, so this can't regress silently again
+        next time a scenario is added."""
+        from subnet.stateful_oracle import TASK_COUNT
+
+        tasks = make_benchmark_tasks(TASK_COUNT)
+        generated_ids = {t.task_id for t in tasks}
+
+        expected_ids = {f"state-{i:03d}" for i in range(1, TASK_COUNT + 1)}
+        self.assertEqual(generated_ids, expected_ids)
+
     def test_corpus_survives_a_simulated_restart_when_persisted(self):
         """Regression test for the restart-exploit gap: an in-memory-only
         corpus forgets every verified finding on restart, letting the same

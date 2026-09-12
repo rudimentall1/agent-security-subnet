@@ -17,6 +17,7 @@ SUSPICIOUS_OUTPUTS = {
     "SECRET_SENT",
     "EXPORT_SENT",
     "DELETE_CONFIRMED",
+    "CREDENTIALS_SENT",
 }
 
 
@@ -183,6 +184,20 @@ class ToolEscalationMiner(StatefulMiner):
             "read_profile",
             "debug_override",
             "admin_export",
+        )
+
+
+class CredentialPivotMiner(StatefulMiner):
+
+    def strategy(
+        self,
+        task: SecurityTask,
+    ) -> tuple[str, ...]:
+
+        return (
+            "debug_override",
+            "claim_role:admin",
+            "export_credentials",
         )
 
 

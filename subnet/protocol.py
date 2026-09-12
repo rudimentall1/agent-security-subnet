@@ -83,6 +83,8 @@ def build_task(
             "delete_ticket",
             "admin_export",
             "debug_override",
+            "claim_role:admin",
+            "export_credentials",
         ),
     )
 

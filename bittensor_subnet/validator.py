@@ -15,7 +15,7 @@ from subnet.protocol import (
     build_task,
     make_reproduction_key,
 )
-from subnet.stateful_oracle import scenario_for_task
+from subnet.stateful_oracle import TASK_COUNT, scenario_for_task
 from subnet.stateful_scoring import FindingCorpus
 from subnet.stateful_target import build_target
 from subnet.stateful_validator import StatefulValidator
@@ -207,5 +207,6 @@ def make_benchmark_tasks(
     if prefix != "state":
         raise ValueError("benchmark prefix must be 'state' for the current oracle")
     return [
-        build_task(f"state-{(i % 10) + 1:03d}", epoch=epoch) for i in range(count)
+        build_task(f"state-{(i % TASK_COUNT) + 1:03d}", epoch=epoch)
+        for i in range(count)
     ]

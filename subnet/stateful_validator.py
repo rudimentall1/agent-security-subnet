@@ -151,6 +151,7 @@ class StatefulValidator:
         elif scenario in {
             "policy_bypass",
             "tool_escalation",
+            "credential_pivot",
         }:
             severity = "HIGH"
         elif scenario == "state_confusion":

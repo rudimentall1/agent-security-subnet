@@ -5,10 +5,12 @@ tool-using agents, and validators independently reproduce and score them.**
 
 Built for the [Bittensor Global Subnet Hackathon](https://www.hackquest.io/hackathons/Bittensor-Global-Subnet-Hackathon).
 
+**Demo video:** [youtu.be/MjzNU8H3D8A](https://youtu.be/MjzNU8H3D8A)
+
 | | |
 |---|---|
 | SDK | bittensor **11.1.0** (`Subtensor.read`, `SetWeights`, `http_auth`) |
-| Tests | 88 passing (`pytest -q`) |
+| Tests | 90 passing (`pytest -q`) |
 | Chain evidence | real testnet commit — see [`evidence/`](evidence/) |
 | Status | prototype; see [Limitations](#limitations) below before trusting any claim |
 
@@ -58,8 +60,8 @@ looking for LLM jailbreak/hallucination benchmarking, that's a different
 problem — non-deterministic to verify by construction — that this subnet
 does not attempt to solve.
 
-The real, still-open limitation is task-space size (5 scenario templates,
-9 fixed action names), not the absence of a language model — see
+The real, still-open limitation is task-space size (6 scenario templates,
+11 fixed action names), not the absence of a language model — see
 [Limitations](#limitations) and [`docs/economics/`](docs/economics/) for
 what that actually constrains.
 
@@ -81,7 +83,7 @@ subnet/
   stateful_validator.py replay + verdict + severity + score
   stateful_scoring.py   FindingCorpus (dedup) + reward formula
 
-tests/          88 unit tests, no network required (bittensor calls are mocked)
+tests/          90 unit tests, no network required (bittensor calls are mocked)
 evidence/       real testnet run logs + on-chain commit record
 docs/economics/ reward-mechanism design notes and known attack surfaces
 ```
@@ -97,7 +99,7 @@ as the current design.
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest -q          # 88 passed, no network needed
+pytest -q          # 90 passed, no network needed
 ```
 
 ### Local miner + validator (no chain)
@@ -165,7 +167,7 @@ Two changes address this:
   `own_last_weights_update_block()` and skips the attempt (rather than
   submitting a doomed transaction) until the window has passed.
 
-This does not make the task space infinite — 5 scenario templates is still
+This does not make the task space infinite — 6 scenario templates is still
 small. Expanding scenario generation is the next real step, not a solved
 problem; see `docs/economics/`.
 
@@ -200,8 +202,8 @@ fixes above (wallet `veritensor`, hotkey `validator2`, UID 4):
 Written plainly, because a security-testing project that overstates its own
 status is not a good look.
 
-- **The task space is small and the target is enumerable.** 5 scenario
-  templates, 9 fixed action names, 6-step budgets — the target is fully
+- **The task space is small and the target is enumerable.** 6 scenario
+  templates, 11 fixed action names, 6-step budgets — the target is fully
   solvable by a fixed strategy (`subnet/stateful_miner.py::BoundarySequenceMiner`).
   Epoch-scoping (above) keeps the mechanism from dying once a scenario is
   solved, but doesn't make finding a solution hard after the first epoch
