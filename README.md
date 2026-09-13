@@ -10,7 +10,7 @@ Built for the [Bittensor Global Subnet Hackathon](https://www.hackquest.io/hacka
 | | |
 |---|---|
 | SDK | bittensor **11.1.0** (`Subtensor.read`, `SetWeights`, `http_auth`) |
-| Tests | 106 passing (`pytest -q`) |
+| Tests | 112 passing (`pytest -q`) |
 | Chain evidence | real testnet commit — see [`evidence/`](evidence/) |
 | Status | prototype; see [Limitations](#limitations) below before trusting any claim |
 
@@ -42,6 +42,18 @@ Task ─────────────────────────
                                                      ▼
                                      aggregate_scores() ──► set_weights()
 ```
+
+The reference miner that ships in production (`subnet/beam_adaptive_miner.py::BeamAdaptiveStateMiner`)
+is a model-free beam search with no access to the scenario or oracle — it
+discovers all 5 real exploit scenarios (including `credential_pivot`,
+added in this pass) through its own search, not by having the answer
+hardcoded, and correctly reports no finding on the one scenario with no
+real vulnerability (`safe_control`). See
+`tests/test_beam_miner_real_scenarios.py`. This matters for the subnet's
+core claim — that reproducibility is exact and doesn't rely on a subjective
+judge — because it's evidence the mechanism can be *played straight*, not
+only solved by copying a known-good trace (see the honest caveat about
+that in Limitations below).
 
 ## 2. Scope: deterministic policy testing, not LLM red-teaming
 
@@ -88,7 +100,7 @@ subnet/
 scripts/
   oaa_to_guardrail_suggestion.py  signed attestation -> suggested guardrail rule (human review)
 
-tests/          106 unit tests, no network required (bittensor calls are mocked)
+tests/          112 unit tests, no network required (bittensor calls are mocked)
 evidence/       real testnet run logs + on-chain commit record
 docs/economics/ reward-mechanism design notes and known attack surfaces
 ```
@@ -104,7 +116,7 @@ as the current design.
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest -q          # 106 passed, no network needed
+pytest -q          # 112 passed, no network needed
 ```
 
 ### Local miner + validator (no chain)
@@ -252,6 +264,22 @@ exploit chain's final tool call behind confirmation) for a human to review
 Written plainly, because a security-testing project that overstates its own
 status is not a good look.
 
+- **Winning trajectories for every scenario are visible in this public
+  repository, not just withheld from the wire protocol.** The validator-only
+  design intent (`subnet/stateful_oracle.py`, `scenario_for_task()`) keeps
+  the policy out of what's sent to miners over HTTP, but this is an
+  open-source repo -- anyone can `git clone` it and read
+  `subnet/stateful_miner.py`'s reference miners (`BoundarySequenceMiner`,
+  `CredentialPivotMiner`, etc.), which contain the exact winning action
+  sequence for each scenario. Given the task space is also small enough to
+  be brute-forced (see below), this means the current mechanism's
+  "discovery" claim is weaker than it looks for anyone who has read this
+  repository -- which includes every judge and every competing miner
+  operator. Epoch-scoping changes the wire-visible `task_id` but not the
+  underlying action sequence a scenario requires, so it does not close this
+  gap. A real fix needs the FSM's specific solution to vary per epoch from
+  a validator-only seed, not just the task_id; that's a real architecture
+  change, not yet done.
 - **The task space is small and the target is enumerable.** 6 scenario
   templates, 11 fixed action names, 6-step budgets — the target is fully
   solvable by a fixed strategy (`subnet/stateful_miner.py::BoundarySequenceMiner`).

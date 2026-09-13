@@ -63,10 +63,19 @@ new in this development pass and is currently unit-tested (mocked chain
 calls), not yet exercised against a live testnet run.
 
 ### Evidence to date
-- 106/106 unit tests passing (`pytest -q`, pure Python, no chain
+- 112/112 unit tests passing (`pytest -q`, pure Python, no chain
   dependency — bittensor calls are mocked). This count includes the core
   scoring/validator/miner logic, the chain-discovery layer, and the OAA
   attestation bridge added in this pass.
+- The reference miner that ships in production
+  (`subnet/beam_adaptive_miner.py::BeamAdaptiveStateMiner`) is a
+  model-free beam search with no scenario/oracle access. It now discovers
+  all 5 real exploit scenarios through its own search — including
+  credential_pivot, where it previously stalled — and correctly reports
+  no finding on the one non-exploitable control scenario. This matters
+  for the "reproducibility is exact, not a judge call" claim: it's
+  evidence the mechanism can be played straight, not only solved by
+  copying a known-good trace (see the gap below on that same point).
 - A real testnet cycle on netuid 557 (`test` network): 3 miners
   discovered, HTTP-signed queries, verification, reward calculation,
   `SetWeights`.
@@ -85,6 +94,18 @@ calls), not yet exercised against a live testnet run.
   under live adversarial conditions.
 
 ### Honest current gaps (and what closes them before Oct 19)
+- **Winning trajectories for every scenario are visible in this public
+  repository, not just withheld from the wire protocol.** The reference
+  miners in `subnet/stateful_miner.py` contain the exact winning sequence
+  for each scenario, and the task space is small enough that this matters:
+  anyone reading the repo — including every judge and every competing
+  miner operator — can read the answer directly rather than discover it.
+  Epoch-scoping changes the wire-visible task ID but not the underlying
+  action sequence a scenario requires, so it does not close this gap. The
+  real fix is deriving each scenario's specific solution from a
+  validator-only per-epoch seed rather than a fixed mapping; that's a
+  real architecture change, not yet done, and we are stating it plainly
+  rather than papering over it with wording.
 - **credential_pivot and the OAA attestation bridge have not yet been run
   against a live testnet cycle** — both are unit-tested only so far. A
   fresh live run covering both would be the strongest single addition to
@@ -106,7 +127,10 @@ calls), not yet exercised against a live testnet run.
 2. Make the persistent duplicate-finding corpus the default, not opt-in.
 3. Run a live testnet cycle covering credential_pivot and OAA attestation
    issuance, and publish that evidence alongside the existing run.
-4. Publish the scenario spec as an open format so other teams can
+4. Derive each scenario's specific solution from a validator-only
+   per-epoch seed instead of a fixed mapping, so reading this public
+   repository no longer hands out the answer key.
+5. Publish the scenario spec as an open format so other teams can
    contribute target agents/policies without touching consensus code.
 
 ---

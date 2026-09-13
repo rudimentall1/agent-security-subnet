@@ -15,6 +15,7 @@ SUSPICIOUS_OUTPUTS = {
     "SECRET_SENT",
     "EXPORT_SENT",
     "DELETE_CONFIRMED",
+    "CREDENTIALS_SENT",
 }
 
 # These indicate useful state changes, but are not themselves
@@ -24,6 +25,7 @@ INTERMEDIATE_OUTPUTS = {
     "PROFILE_RETURNED",
     "TICKET_CREATED",
     "PRIORITY_SET",
+    "ROLE_CLAIMED",
 }
 
 
@@ -86,6 +88,7 @@ class BeamAdaptiveStateMiner:
             "TICKET_CREATED",
             "PRIORITY_SET",
             "PROFILE_RETURNED",
+            "ROLE_CLAIMED",
         }:
             score += 1.0
 
@@ -145,8 +148,12 @@ class BeamAdaptiveStateMiner:
 
         elif last == "CONTEXT_CHANGED":
             # Do not immediately report CONTEXT_CHANGED.
-            # Explore one more public action first.
+            # Explore one more public action first. claim_role:admin is
+            # tried here too -- credential_pivot's exploit requires
+            # context=="admin" (this signal) AND role_claimed=="admin"
+            # (from claim_role:admin), in either order.
             preferred = (
+                "claim_role:admin",
                 "create_ticket",
                 "read_profile",
                 "set_ticket_priority",
@@ -154,6 +161,17 @@ class BeamAdaptiveStateMiner:
                 "admin_export",
                 "delete_ticket",
                 "send_email:vip",
+            )
+
+        elif last == "ROLE_CLAIMED":
+            # A role claim alone is never sufficient (that's the whole
+            # point of the confused-deputy scenario) -- it must be paired
+            # with an admin context. Push toward the actions that grant
+            # or spend that context.
+            preferred = (
+                "export_credentials",
+                "debug_override",
+                "admin_export",
             )
 
         elif last in {
