@@ -1,7 +1,6 @@
 # agent-security-subnet
 
-**A Bittensor subnet where miners find security policy violations in stateful,
-tool-using agents, and validators independently reproduce and score them.**
+**Pay for reproducible agent exploits, not guesses: a Bittensor subnet where miners discover security-policy violations and validators independently reproduce them.**
 
 Built for the [Bittensor Global Subnet Hackathon](https://www.hackquest.io/hackathons/Bittensor-Global-Subnet-Hackathon).
 
