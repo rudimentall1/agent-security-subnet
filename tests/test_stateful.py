@@ -63,7 +63,7 @@ class TestStatefulSecurity(unittest.TestCase):
 
         self.assertEqual(
             shallow_result.verdict,
-            "FALSE_POSITIVE",
+            "ABSTAINED",
         )
 
         self.assertEqual(

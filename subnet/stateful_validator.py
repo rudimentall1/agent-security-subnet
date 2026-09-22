@@ -101,6 +101,21 @@ class StatefulValidator:
             finding
         )
 
+        if finding.claim_type == "no_finding":
+            return VerificationResult(
+                verdict="ABSTAINED",
+                severity="NONE",
+                reproducible=True,
+                policy_violation=False,
+                impact_score=0.0,
+                novelty_score=0.0,
+                efficiency_score=1.0 / len(trace),
+                security_score=0.0,
+                duplicate=False,
+                reason="Miner submitted no finding after exploration.",
+                reproduction_key=finding.reproduction_key,
+            )
+
         if finding.claim_type != "security_anomaly":
             return VerificationResult(
                 verdict="INVALID_CLAIM",

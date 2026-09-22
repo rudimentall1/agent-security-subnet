@@ -126,7 +126,9 @@ def summarize(material, rows):
     verified = [r for r in rows if r[4].verdict == "VERIFIED"]
     fp = [r for r in rows if r[4].verdict == "FALSE_POSITIVE"]
     dup = [r for r in rows if r[4].verdict == "DUPLICATE"]
+    abstained = [r for r in rows if r[4].verdict == "ABSTAINED"]
     invalid = [r for r in rows if r[4].verdict == "INVALID_CLAIM"]
+    claims = [r for r in rows if r[4].verdict in {"VERIFIED", "FALSE_POSITIVE", "DUPLICATE"}]
     discovered = {
         (r[0].family_id, r[1]) for r in verified
     }
@@ -161,10 +163,12 @@ def summarize(material, rows):
         "unique_instances_discovered": len(discovered),
         "false_positives": len(fp),
         "duplicates": len(dup),
+        "abstained": len(abstained),
         "invalid_claims": len(invalid),
+        "claim_rate": len(claims) / len(rows),
         "instance_discovery_rate": len(discovered) / instances,
         "evaluation_discovery_rate": len(verified) / len(rows),
-        "false_positive_rate": len(fp) / len(rows),
+        "false_positive_rate": len(fp) / len(claims) if claims else 0.0,
         "severity_weighted_recall": found_weight / total_weight if total_weight else 0.0,
         "median_steps": median(steps) if steps else 0,
         "p95_steps": steps[max(0, int(len(steps) * .95) - 1)] if steps else 0,

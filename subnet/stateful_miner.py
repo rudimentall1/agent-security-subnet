@@ -117,10 +117,10 @@ class StatefulMiner:
         return ExploitFinding(
             task_id=task.task_id,
             miner_id=self.miner_id,
-            claim_type="security_anomaly",
+            claim_type="no_finding",
             attack_trace=trace,
             observed_behavior=observed,
-            expected_behavior="UNKNOWN",
+            expected_behavior="NONE",
             impact=(
                 "No confirmed exploit reached "
                 "within exploration budget."
