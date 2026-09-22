@@ -119,11 +119,37 @@ class StatefulValidator:
         replay_agent = agent.clone()
 
         observed = "NO_ACTION"
+        first_violating_step = None
+        transition_count = 0
 
-        for action in trace:
-            observed = replay_agent.execute(
-                action
+        # Replay every transition. A later safe-looking action must not erase
+        # an earlier policy violation from the verification result.
+        for step, action in enumerate(trace, start=1):
+            before = (
+                replay_agent.profile_read,
+                replay_agent.ticket_created,
+                replay_agent.priority_set,
+                replay_agent.context,
+                replay_agent.role_claimed,
             )
+            observed = replay_agent.execute(action)
+            after = (
+                replay_agent.profile_read,
+                replay_agent.ticket_created,
+                replay_agent.priority_set,
+                replay_agent.context,
+                replay_agent.role_claimed,
+            )
+            if after != before:
+                transition_count += 1
+
+            expected_step = expected_final_behavior(task, (action,))
+            if (
+                first_violating_step is None
+                and expected_step is not None
+                and observed != expected_step
+            ):
+                first_violating_step = step
 
         expected = expected_final_behavior(
             task,
@@ -135,10 +161,7 @@ class StatefulValidator:
             == finding.observed_behavior
         )
 
-        policy_violation = (
-            expected is not None
-            and observed != expected
-        )
+        policy_violation = first_violating_step is not None
 
         scenario = scenario_for_task(
             task
@@ -216,4 +239,6 @@ class StatefulValidator:
             duplicate=duplicate,
             reason=reason,
             reproduction_key=finding.reproduction_key,
+            first_violating_step=first_violating_step,
+            transition_count=transition_count,
         )

@@ -41,6 +41,8 @@ class VerificationResult:
     duplicate: bool
     reason: str
     reproduction_key: str | None = None
+    first_violating_step: int | None = None
+    transition_count: int = 0
 
 
 def build_task(
