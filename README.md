@@ -1,10 +1,14 @@
 # agent-security-subnet
 
+## Watch the demo
+
+[![Watch the demo on YouTube](https://img.youtube.com/vi/MjzNU8H3D8A/hqdefault.jpg)](https://www.youtube.com/watch?v=MjzNU8H3D8A)
+
+Select the preview to play the video in your browser.
+
 **Pay for reproducible agent exploits, not guesses: a Bittensor subnet where miners discover security-policy violations and validators independently reproduce them.**
 
 Built for the [Bittensor Global Subnet Hackathon](https://www.hackquest.io/hackathons/Bittensor-Global-Subnet-Hackathon).
-
-**Demo video:** [youtu.be/MjzNU8H3D8A](https://youtu.be/MjzNU8H3D8A)
 
 | | |
 |---|---|
