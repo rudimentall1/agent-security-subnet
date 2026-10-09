@@ -10,8 +10,6 @@ Select the preview to play the video in your browser.
 
 Built for the [Bittensor Global Subnet Hackathon](https://www.hackquest.io/hackathons/Bittensor-Global-Subnet-Hackathon).
 
-**Demo video:** [youtu.be/MjzNU8H3D8A](https://youtu.be/MjzNU8H3D8A)
-
 | | |
 |---|---|
 | SDK | bittensor **11.1.0** (`Subtensor.read`, `SetWeights`, `http_auth`) |
